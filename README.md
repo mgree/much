@@ -72,6 +72,7 @@ OCaml seems like it will provide the easiest way to work.
 
 Use Lwt or Lwt_unix? https://github.com/mirage/ocaml-cohttp for HTTP?
 https://www.baturin.org/code/lwt-counter-server/ is a start
+https://github.com/mk270/archipelago is a full MUD in OCaml
 MirageOS feels like overkill.
 
 Flat-file organization, like ROM MUD pfiles?  Could even hardcode
