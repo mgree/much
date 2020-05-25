@@ -94,6 +94,23 @@ https://github.com/hyperium/hyper/blob/master/examples/single_threaded.rs
 Flat-file organization, like ROM MUD pfiles?  Could even hardcode
 rooms to start (but need to create private rooms on the fly).
 
+### Game state
+
+World map
+  Rooms know who's in them
+  
+Session IDs map to:
+  player (how are anons represented... HTTP session UUID?)
+    set (!!) of rooms
+  
+  socket
+  output buffers
+  input buffers (or deal with it live?)
+  
+  clock tick pushes direct buffer
+  
+  HTTP pull drains buffer
+
 ### Core abstractions
 
 Do we need the 'tick' infrastructure that is the default on MUDs? We
