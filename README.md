@@ -86,6 +86,8 @@ A log of all tells. Optional conversation logging.
 - Hyper
 
 https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
+https://github.com/hyperium/hyper/blob/master/examples/multi_server.rs
+https://github.com/hyperium/hyper/blob/master/examples/single_threaded.rs
 
 ### Database
 
