@@ -30,6 +30,10 @@ people sit and work on their laptos.
 There should be a 1-1 mapping of rooms to URLs. You can enter a URL
 into the MUD client and you'll go right there.
 
+How should session management work?
+
+What happens when you open multiple room URLs?
+
 Room descriptions should make it easy to share a link to "go here
 immediately".
 
@@ -68,15 +72,27 @@ A log of all tells. Optional conversation logging.
 
 ## Plans
 
-OCaml seems like it will provide the easiest way to work.
+### OCaml resources
 
-Use Lwt or Lwt_unix? https://github.com/mirage/ocaml-cohttp for HTTP?
-https://www.baturin.org/code/lwt-counter-server/ is a start
-https://github.com/mk270/archipelago is a full MUD in OCaml
-MirageOS feels like overkill.
+- Use Lwt or Lwt_unix
+- https://github.com/mirage/ocaml-cohttp for HTTP?
+- https://www.baturin.org/code/lwt-counter-server/ is a start
+- https://github.com/mk270/archipelago is a full MUD in OCaml
+- MirageOS feels like overkill.
+
+### Rust resources
+
+- Tokio
+- Hyper
+
+https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
+
+### Database
 
 Flat-file organization, like ROM MUD pfiles?  Could even hardcode
 rooms to start (but need to create private rooms on the fly).
+
+### Core abstractions
 
 Do we need the 'tick' infrastructure that is the default on MUDs? We
 have to worry a bit about DoS, but maybe we can do something simpler,
