@@ -89,6 +89,19 @@ https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper
 https://github.com/hyperium/hyper/blob/master/examples/multi_server.rs
 https://github.com/hyperium/hyper/blob/master/examples/single_threaded.rs
 
+### Protocol fanciness
+
+#### MCCP
+
+https://docs.rs/flate2/1.0.14/flate2/
+https://tintin.mudhalla.net/protocols/exop/
+MCCP2 is code 86
+
+#### Color
+
+https://en.wikipedia.org/wiki/ANSI_escape_code
+https://mudhalla.net/tintin/info/ansicolor/
+
 ### Database
 
 Flat-file organization, like ROM MUD pfiles?  Could even hardcode
