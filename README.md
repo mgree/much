@@ -62,13 +62,11 @@ Some way of setting a schedule, and having announcements happen there?
 
 ### Logs/history
 
-Log, for each user, everything they see or hear?
-  Single global log, with markers for who's heard it?
-  Starts to feel invasive.
+Maybe no logs for users? Just server-side event logs, let people sort
+it out themselves. MUD clients log well, and we can offer downloads in
+the HTML view.
 
-  What about private rooms?
-
-A log of all tells. Optional conversation logging.
+We _do_ need to keep careful track of resource use.
 
 ## Plans
 
@@ -83,6 +81,8 @@ A log of all tells. Optional conversation logging.
 ### Rust resources
 
 - Tokio
+https://docs.rs/tokio-trace/0.1.0/tokio_trace/
+https://github.com/tokio-rs/tokio/blob/master/examples/chat.rs
 - Hyper
 
 https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
