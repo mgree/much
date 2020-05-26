@@ -17,6 +17,17 @@ use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
+/// The global shared state
+pub struct State {
+    next_id: PersonId,
+    /// Each PersonId is associated with Person data
+    people: HashMap<PersonId, Person>,
+    /// Each `Peer` is associated with a `PersonId`
+    peers: HashMap<Connection, PersonId>,
+    // Each PersonId has a corresponding message queue
+    queues: HashMap<PersonId, MessageQueueTX>,
+}
+
 /// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
 /// or statelessly via an HTTP session
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -30,14 +41,12 @@ type MessageQueueRX = mpsc::UnboundedReceiver<Message>;
 
 /// Unique ID numbers for each person
 // TODO fresh generation, database of all known
-type PersonId = u32;
+type PersonId = u64;
 
 /// Someone who is connected
 pub struct Person {
     id: PersonId,
     name: String,
-    /// Pending messages for this client
-    tx: MessageQueueTX,
 }
 
 /// Messages from, e.g., commands
@@ -49,28 +58,31 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn render(&self, receiver: PersonId) -> String {
+    pub async fn render(&self, state: Arc<Mutex<State>>, receiver: PersonId) -> String {
         match self {
-            Message::Arrive { id } => format!("{} arrived.", id), // TODO resolve name
-            Message::Depart { id } => format!("{} left.", id), // TODO resolve name
-            Message::Say { speaker, text } => format!("{} says, '{}'", speaker, text),
+            Message::Arrive { id } if *id == receiver => "".to_string(),
+            Message::Arrive { id } => format!("{} arrived.", state.lock().await.person(id).name),
+            Message::Depart { id } if *id == receiver => "".to_string(),
+            Message::Depart { id } => format!("{} left.", state.lock().await.person(id).name),
+            Message::Say { speaker, text } if *speaker == receiver => {
+                format!("You say, '{}'", text)
+            }
+            Message::Say { speaker, text } => format!(
+                "{} says, '{}'",
+                state.lock().await.person(speaker).name,
+                text
+            ),
         }
     }
-}
-
-/// The global shared state
-pub struct State {
-    next_id: PersonId,
-    /// Each `Peer` is associated with a `Person` record
-    peers: HashMap<Connection, Person>
-    // TODO cleaner mapping: use PersonId everywhere, then indirect through State
 }
 
 impl State {
     pub fn new() -> Self {
         State {
             next_id: 0,
+            people: HashMap::new(),
             peers: HashMap::new(),
+            queues: HashMap::new(),
         }
     }
 
@@ -80,10 +92,38 @@ impl State {
         id
     }
 
+    pub fn new_person(&mut self, name: &str) -> PersonId {
+        let id = self.fresh_id();
+
+        let name = name.to_string();
+        let person = Person { id, name };
+
+        self.people.insert(id, person);
+
+        id
+    }
+
+    pub fn person(&self, id: &PersonId) -> &Person {
+        assert!(self.people.contains_key(&id));
+        self.people.get(&id).unwrap()
+    }
+
+    pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
+        self.peers.insert(Connection::TCP { addr }, id);
+        self.queues.insert(id, tx);
+    }
+
+    pub fn unregister_tcp_connection(&mut self, addr: SocketAddr) {
+        let addr = Connection::TCP { addr };
+        assert!(self.peers.contains_key(&addr));
+
+        self.peers.remove(&addr);
+    }
+
     /// Send a message to _all_ peers.
     pub async fn broadcast(&mut self, message: Message) {
-        for p in self.peers.iter_mut() {
-            let _ = p.1.tx.send(message.clone());
+        for p in self.queues.iter_mut() {
+            let _ = p.1.send(message.clone());
         }
     }
 }
@@ -118,15 +158,9 @@ impl TCPPeer {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // TODO login?! use existing id?
-        let id = state.lock().await.fresh_id();
+        let id = state.lock().await.new_person(&name);
 
-        let person = Person { id, name, tx };
-
-        state
-            .lock()
-            .await
-            .peers
-            .insert(Connection::TCP { addr }, person);
+        state.lock().await.register_tcp_connection(id, addr, tx);
 
         Ok(TCPPeer { lines, id, rx })
     }
@@ -186,13 +220,17 @@ pub async fn process(
         match result {
             Ok(PeerMessage::LineFromPeer(msg)) => {
                 // TODO parse commands here
-                let msg = Message::Say { speaker: peer.id,  text: msg };
+                let msg = Message::Say {
+                    speaker: peer.id,
+                    text: msg,
+                };
                 let mut state = state.lock().await;
                 state.broadcast(msg).await;
             }
 
             Ok(PeerMessage::SendToPeer(msg)) => {
-                peer.lines.send(msg.render(peer.id)).await?;
+                let s = msg.render(state.clone(), peer.id).await;
+                peer.lines.send(s).await?;
             }
             Err(e) => {
                 println!(
@@ -205,6 +243,11 @@ pub async fn process(
 
     {
         let mut state = state.lock().await;
+
+        // actually log them off
+        state.unregister_tcp_connection(addr);
+
+        // announce it to everyone
         let msg = Message::Depart { id: peer.id };
         println!("{:?}", msg);
         state.broadcast(msg).await;
