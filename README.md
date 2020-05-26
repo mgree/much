@@ -70,20 +70,11 @@ We _do_ need to keep careful track of resource use.
 
 ## Plans
 
-### OCaml resources
-
-- Use Lwt or Lwt_unix
-- https://github.com/mirage/ocaml-cohttp for HTTP?
-- https://www.baturin.org/code/lwt-counter-server/ is a start
-- https://github.com/mk270/archipelago is a full MUD in OCaml
-- MirageOS feels like overkill.
-
-### Rust resources
-
 - Tokio
 https://docs.rs/tokio-trace/0.1.0/tokio_trace/
 https://github.com/tokio-rs/tokio/blob/master/examples/chat.rs
 - Hyper
+  CSRF protection?
 
 https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
 https://github.com/hyperium/hyper/blob/master/examples/multi_server.rs
