@@ -49,6 +49,7 @@ pub struct Person {
     name: String,
 }
 
+// TODO pre-resolve names (currenly resolving once per player!!!); should also drop the state dependency on render
 /// Messages from, e.g., commands
 #[derive(Clone, Debug)]
 pub enum Message {
