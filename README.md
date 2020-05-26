@@ -73,14 +73,9 @@ We _do_ need to keep careful track of resource use.
 ## Plans
 
 - Tokio
-https://docs.rs/tokio-trace/0.1.0/tokio_trace/
 https://github.com/tokio-rs/tokio/blob/master/examples/chat.rs
 - Hyper
   CSRF protection?
-
-https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
-https://github.com/hyperium/hyper/blob/master/examples/multi_server.rs
-https://github.com/hyperium/hyper/blob/master/examples/single_threaded.rs
 
 ### Protocol fanciness
 
@@ -106,19 +101,6 @@ World map
   Rooms know who's in them
   
 Session IDs map to:
-  player (how are anons represented... HTTP session UUID?)
-    set (!!) of rooms
-  
-  socket
-  output buffers
-  input buffers (or deal with it live?)
-  
-  clock tick pushes direct buffer
+  player (how are anonymous people represented... HTTP session UUID?)
   
   HTTP pull drains buffer
-
-### Core abstractions
-
-Do we need the 'tick' infrastructure that is the default on MUDs? We
-have to worry a bit about DoS, but maybe we can do something simpler,
-like IRC flood control?
