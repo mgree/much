@@ -59,6 +59,7 @@ pub enum Message {
 
 impl Message {
     pub async fn render(&self, state: Arc<Mutex<State>>, receiver: PersonId) -> String {
+        // LATER i18n
         match self {
             Message::Arrive { id } if *id == receiver => "".to_string(),
             Message::Arrive { id } => format!("{} arrived.", state.lock().await.person(id).name),
