@@ -1,3 +1,10 @@
+dist: xenial
+
+os:
+  - osx
+  - linux
+  - freebsd
+
 language: rust
 
 rust:
