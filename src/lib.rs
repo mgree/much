@@ -53,25 +53,25 @@ pub struct Person {
 /// Messages from, e.g., commands
 #[derive(Clone, Debug)]
 pub enum Message {
-    Arrive { id: PersonId },
-    Depart { id: PersonId },
-    Say { speaker: PersonId, text: String },
+    Arrive { id: PersonId, name: String },
+    Depart { id: PersonId, name: String },
+    Say { speaker: PersonId, speaker_name: String, text: String },
 }
 
 impl Message {
-    pub async fn render(&self, state: Arc<Mutex<State>>, receiver: PersonId) -> String {
+    pub async fn render(&self, receiver: PersonId) -> String {
         // LATER i18n
         match self {
-            Message::Arrive { id } if *id == receiver => "".to_string(),
-            Message::Arrive { id } => format!("{} arrived.", state.lock().await.person(id).name),
-            Message::Depart { id } if *id == receiver => "".to_string(),
-            Message::Depart { id } => format!("{} left.", state.lock().await.person(id).name),
-            Message::Say { speaker, text } if *speaker == receiver => {
+            Message::Arrive { id, .. } if *id == receiver => "".to_string(),
+            Message::Arrive { name, .. } => format!("{} arrived.", name),
+            Message::Depart { id, .. } if *id == receiver => "".to_string(),
+            Message::Depart { name, .. } => format!("{} left.", name),
+            Message::Say { speaker, text, .. } if *speaker == receiver => {
                 format!("You say, '{}'", text)
             }
-            Message::Say { speaker, text } => format!(
+            Message::Say { speaker_name, text, .. } => format!(
                 "{} says, '{}'",
-                state.lock().await.person(speaker).name,
+                speaker_name,
                 text
             ),
         }
@@ -145,6 +145,8 @@ struct TCPPeer {
     lines: Framed<TcpStream, LinesCodec>,
     /// Who this peer resolves to
     id: PersonId,
+    /// Their name (cached, for convenience)
+    name: String,
     /// Receive-end of the message queue for this connection
     rx: MessageQueueRX,
 }
@@ -164,7 +166,7 @@ impl TCPPeer {
 
         state.lock().await.register_tcp_connection(id, addr, tx);
 
-        Ok(TCPPeer { lines, id, rx })
+        Ok(TCPPeer { lines, id, name, rx })
     }
 }
 
@@ -213,7 +215,7 @@ pub async fn process(
 
     {
         let mut state = state.lock().await;
-        let msg = Message::Arrive { id: peer.id };
+        let msg = Message::Arrive { id: peer.id, name: peer.name.clone() };
         println!("{:?}", msg);
         state.broadcast(msg).await;
     }
@@ -224,6 +226,7 @@ pub async fn process(
                 // TODO parse commands here
                 let msg = Message::Say {
                     speaker: peer.id,
+                    speaker_name: peer.name.clone(),
                     text: msg,
                 };
                 let mut state = state.lock().await;
@@ -231,7 +234,7 @@ pub async fn process(
             }
 
             Ok(PeerMessage::SendToPeer(msg)) => {
-                let s = msg.render(state.clone(), peer.id).await;
+                let s = msg.render(peer.id).await;
                 peer.lines.send(s).await?;
             }
             Err(e) => {
@@ -250,7 +253,7 @@ pub async fn process(
         state.unregister_tcp_connection(addr);
 
         // announce it to everyone
-        let msg = Message::Depart { id: peer.id };
+        let msg = Message::Depart { id: peer.id, name: peer.name.clone() };
         println!("{:?}", msg);
         state.broadcast(msg).await;
     }
