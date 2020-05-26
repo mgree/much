@@ -1,5 +1,7 @@
 # MUCH: Multi-User Conference Hall
 
+[![Build Status](https://travis-ci.com/mgree/much.svg?branch=master)](https://travis-ci.com/mgree/much)
+
 A text-based virtual conference venue, accessible via telnet, MUD
 clients, or over the web.
 
