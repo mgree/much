@@ -28,9 +28,7 @@ async fn main() -> io::Result<()> {
     loop {
         let (stream, addr) = listener.accept().await?;
 
-        let state = Arc::clone(&state);
-
-        // Spawn our handler to be run asynchronously.
+        let state = state.clone();
         tokio::spawn(async move {
             if let Err(e) = process(state, stream, addr).await {
                 println!("an error occurred; error = {:?}", e);
