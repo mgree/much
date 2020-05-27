@@ -13,7 +13,7 @@
 - [ ] Logging
       https://docs.rs/tokio-trace/0.1.0/tokio_trace/
 
-- [ ] Command framework
+- [x] Command framework
   + [ ] Parsers
   + [ ] Documentation/help
   + Specific commands:
@@ -30,9 +30,10 @@
     * [ ] help
     * [ ] look
     * [ ] profile info/editing
+    * [x] shutdown
 
 - [ ] Maps/rooms
-  + [ ] Library for parsing descriptions
+  + [ ] Library for parsing some file format
 
 - [ ] HTTP gateway
       https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
@@ -42,6 +43,7 @@
 - [ ] Security issues
   + [ ] DoS/flood control
         https://docs.rs/tokio/0.2.21/tokio/time/fn.throttle.html
+        doesn't seem to work directly on TCPStreams
   + [ ] CSRF protection
   + [ ] email verification
   + [ ] twitter verification

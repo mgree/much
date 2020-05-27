@@ -29,6 +29,62 @@ pub struct State {
     queues: HashMap<PersonId, MessageQueueTX>,
 }
 
+impl State {
+    pub fn new() -> Self {
+        State {
+            next_id: 0,
+            people: HashMap::new(),
+            peers: HashMap::new(),
+            queues: HashMap::new(),
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        std::process::exit(0);
+    }
+
+    pub fn fresh_id(&mut self) -> PersonId {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    pub fn new_person(&mut self, name: &str) -> PersonId {
+        let id = self.fresh_id();
+
+        let name = name.to_string();
+        let person = Person { id, name };
+
+        self.people.insert(id, person);
+
+        id
+    }
+
+    pub fn person(&self, id: &PersonId) -> &Person {
+        assert!(self.people.contains_key(&id));
+        self.people.get(&id).unwrap()
+    }
+
+    pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
+        self.peers.insert(Connection::TCP { addr }, id);
+        self.queues.insert(id, tx);
+    }
+
+    pub fn unregister_tcp_connection(&mut self, addr: SocketAddr) {
+        let addr = Connection::TCP { addr };
+        assert!(self.peers.contains_key(&addr));
+
+        self.peers.remove(&addr);
+    }
+
+    /// Send a message to _all_ peers.
+    pub async fn broadcast(&mut self, message: Message) {
+        for p in self.queues.iter_mut() {
+            let _ = p.1.send(message.clone());
+        }
+    }
+}
+
 /// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
 /// or statelessly via an HTTP session
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -87,54 +143,58 @@ impl Message {
     }
 }
 
-impl State {
-    pub fn new() -> Self {
-        State {
-            next_id: 0,
-            people: HashMap::new(),
-            peers: HashMap::new(),
-            queues: HashMap::new(),
+#[derive(Clone, Debug)]
+pub enum Command {
+    Say { text: String },
+    Shutdown,
+}
+
+#[derive(Debug)]
+pub struct ParserError {
+    msg: String,
+}
+
+impl Error for ParserError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Parse error: {} is not a valid command.", self.msg)
+    }
+}
+
+impl Command {
+    pub fn parse(s: String) -> Result<Command, Box<dyn Error>> {
+        let s = s.trim();
+
+        if s == "shutdown" {
+            Ok(Command::Shutdown)
+        } else {
+            Ok(Command::Say {
+                text: s.to_string(),
+            })
         }
     }
 
-    pub fn fresh_id(&mut self) -> PersonId {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
-    }
-
-    pub fn new_person(&mut self, name: &str) -> PersonId {
-        let id = self.fresh_id();
-
-        let name = name.to_string();
-        let person = Person { id, name };
-
-        self.people.insert(id, person);
-
-        id
-    }
-
-    pub fn person(&self, id: &PersonId) -> &Person {
-        assert!(self.people.contains_key(&id));
-        self.people.get(&id).unwrap()
-    }
-
-    pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
-        self.peers.insert(Connection::TCP { addr }, id);
-        self.queues.insert(id, tx);
-    }
-
-    pub fn unregister_tcp_connection(&mut self, addr: SocketAddr) {
-        let addr = Connection::TCP { addr };
-        assert!(self.peers.contains_key(&addr));
-
-        self.peers.remove(&addr);
-    }
-
-    /// Send a message to _all_ peers.
-    pub async fn broadcast(&mut self, message: Message) {
-        for p in self.queues.iter_mut() {
-            let _ = p.1.send(message.clone());
+    pub async fn run(self, state: Arc<Mutex<State>>, id: PersonId, name: &str) {
+        // TODO log
+        println!("{} ({}): {:?}", name, id, self);
+        match self {
+            Command::Say { text } => {
+                state
+                    .lock()
+                    .await
+                    .broadcast(Message::Say {
+                        speaker: id,
+                        speaker_name: name.to_string(),
+                        text,
+                    })
+                    .await
+            }
+            Command::Shutdown => state.lock().await.shutdown(),
         }
     }
 }
@@ -230,6 +290,8 @@ pub async fn login(
     lines: &mut Framed<TcpStream, LinesCodec>,
     addr: SocketAddr,
 ) -> Result<String, Box<dyn Error>> {
+    // TODO welcome header, instructions, etc.
+
     loop {
         lines
             .send("What is your email address or Twitter handle? ")
@@ -240,7 +302,9 @@ pub async fn login(
                 let name = line.trim();
 
                 if name.is_empty() || !name.contains('@') {
-                    lines.send("Please enter a valid email address or Twitter handle. ").await?;
+                    lines
+                        .send("Please enter a valid email address or Twitter handle.")
+                        .await?;
                     continue;
                 }
 
@@ -258,7 +322,6 @@ pub async fn process(
 ) -> Result<(), Box<dyn Error>> {
     let mut lines = Framed::new(stream, LinesCodec::new());
 
-    // TODO welcome header, instructions, etc.
     let name = login(state.clone(), &mut lines, addr).await?;
     let mut peer = TCPPeer::new(state.clone(), lines, name.clone()).await?;
 
@@ -268,27 +331,23 @@ pub async fn process(
             id: peer.id,
             name: peer.name.clone(),
         };
-        println!("{:?}", msg);
+        println!("{:?}", msg); // TODO log
         state.broadcast(msg).await;
     }
 
     while let Some(result) = peer.next().await {
         match result {
             Ok(PeerMessage::LineFromPeer(msg)) => {
-                // TODO parse commands here
-                let msg = Message::Say {
-                    speaker: peer.id,
-                    speaker_name: peer.name.clone(),
-                    text: msg,
-                };
-                let mut state = state.lock().await;
-                state.broadcast(msg).await;
+                let cmd = Command::parse(msg)?;
+
+                cmd.run(state.clone(), peer.id, &peer.name).await;
             }
 
             Ok(PeerMessage::SendToPeer(msg)) => {
                 let s = msg.render(peer.id).await;
                 peer.lines.send(s).await?;
             }
+
             Err(e) => {
                 println!(
                     "an error occurred while processing messages for {}; error = {:?}",

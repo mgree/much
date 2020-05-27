@@ -35,7 +35,4 @@ async fn main() -> io::Result<()> {
             }
         });
     }
-
-    println!("shutting down on {}", addr);
-    Ok(())
 }
