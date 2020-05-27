@@ -1,7 +1,7 @@
 extern crate much;
 
 use std::env;
-use std::io;
+use std::error::Error;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use much::*;
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> Result<(), Box<dyn Error>> {
     println!("much v{}", VERSION);
 
     let state = Arc::new(Mutex::new(State::new()));
@@ -22,17 +22,9 @@ async fn main() -> io::Result<()> {
         .unwrap_or_else(|| "127.0.0.1:4000".to_string());
     
     let mut listener = TcpListener::bind(&addr).await?;
-
     println!("listening on {}", addr);
 
-    loop {
-        let (stream, addr) = listener.accept().await?;
+    serve(state, &mut listener).await?;
 
-        let state = state.clone();
-        tokio::spawn(async move {
-            if let Err(e) = process(state, stream, addr).await {
-                println!("an error occurred; error = {:?}", e);
-            }
-        });
-    }
+    Ok(())
 }

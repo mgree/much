@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::SinkExt;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
@@ -199,6 +199,10 @@ impl Command {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// TCP STUFF
+////////////////////////////////////////////////////////////////////////////////
+
 /// Internal messages for managing a peer's `MessageQueue`
 #[derive(Clone, Debug)]
 enum PeerMessage {
@@ -373,4 +377,17 @@ pub async fn process(
     }
 
     Ok(())
+}
+
+pub async fn serve(state: Arc<Mutex<State>>, listener: &mut TcpListener) -> io::Result<()> {
+    loop {
+        let (stream, addr) = listener.accept().await?;
+
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = process(state, stream, addr).await {
+                println!("an error occurred; error = {:?}", e);
+            }
+        });
+    }
 }
