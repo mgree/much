@@ -3,6 +3,7 @@
 use std::cmp::{Eq, PartialEq};
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -53,9 +54,19 @@ pub struct Person {
 /// Messages from, e.g., commands
 #[derive(Clone, Debug)]
 pub enum Message {
-    Arrive { id: PersonId, name: String },
-    Depart { id: PersonId, name: String },
-    Say { speaker: PersonId, speaker_name: String, text: String },
+    Arrive {
+        id: PersonId,
+        name: String,
+    },
+    Depart {
+        id: PersonId,
+        name: String,
+    },
+    Say {
+        speaker: PersonId,
+        speaker_name: String,
+        text: String,
+    },
 }
 
 impl Message {
@@ -69,11 +80,9 @@ impl Message {
             Message::Say { speaker, text, .. } if *speaker == receiver => {
                 format!("You say, '{}'", text)
             }
-            Message::Say { speaker_name, text, .. } => format!(
-                "{} says, '{}'",
-                speaker_name,
-                text
-            ),
+            Message::Say {
+                speaker_name, text, ..
+            } => format!("{} says, '{}'", speaker_name, text),
         }
     }
 }
@@ -166,7 +175,12 @@ impl TCPPeer {
 
         state.lock().await.register_tcp_connection(id, addr, tx);
 
-        Ok(TCPPeer { lines, id, name, rx })
+        Ok(TCPPeer {
+            lines,
+            id,
+            name,
+            rx,
+        })
     }
 }
 
@@ -190,6 +204,53 @@ impl Stream for TCPPeer {
     }
 }
 
+#[derive(Debug)]
+struct LoginAbortedError {
+    addr: SocketAddr,
+}
+
+impl Error for LoginAbortedError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for LoginAbortedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Couldn't get username from {}; connection reset.",
+            self.addr
+        )
+    }
+}
+
+pub async fn login(
+    _state: Arc<Mutex<State>>,
+    lines: &mut Framed<TcpStream, LinesCodec>,
+    addr: SocketAddr,
+) -> Result<String, Box<dyn Error>> {
+    loop {
+        lines
+            .send("What is your email address or Twitter handle? ")
+            .await?;
+
+        match lines.next().await {
+            Some(Ok(line)) => {
+                let name = line.trim();
+
+                if name.is_empty() || !name.contains('@') {
+                    lines.send("Please enter a valid email address or Twitter handle. ").await?;
+                    continue;
+                }
+
+                return Ok(name.to_string());
+            }
+            _ => return Err(Box::new(LoginAbortedError { addr })),
+        }
+    }
+}
+
 pub async fn process(
     state: Arc<Mutex<State>>,
     stream: TcpStream,
@@ -198,24 +259,15 @@ pub async fn process(
     let mut lines = Framed::new(stream, LinesCodec::new());
 
     // TODO welcome header, instructions, etc.
-
-    lines
-        .send("What is your name, Twitter handle, or email address? ")
-        .await?;
-
-    let name = match lines.next().await {
-        Some(Ok(line)) => line, // TODO trim, check up
-        _ => {
-            println!("Couldn't get username from {}; connection reset.", addr);
-            return Ok(());
-        }
-    };
-
+    let name = login(state.clone(), &mut lines, addr).await?;
     let mut peer = TCPPeer::new(state.clone(), lines, name.clone()).await?;
 
     {
         let mut state = state.lock().await;
-        let msg = Message::Arrive { id: peer.id, name: peer.name.clone() };
+        let msg = Message::Arrive {
+            id: peer.id,
+            name: peer.name.clone(),
+        };
         println!("{:?}", msg);
         state.broadcast(msg).await;
     }
@@ -253,7 +305,10 @@ pub async fn process(
         state.unregister_tcp_connection(addr);
 
         // announce it to everyone
-        let msg = Message::Depart { id: peer.id, name: peer.name.clone() };
+        let msg = Message::Depart {
+            id: peer.id,
+            name: peer.name.clone(),
+        };
         println!("{:?}", msg);
         state.broadcast(msg).await;
     }
