@@ -1,3 +1,6 @@
+- [ ] Performance questions
+  Switch from Mutex to RwLock? Don't want to block out the writers...
+
 - [ ] Persistence
 
 - [ ] Registration
@@ -35,10 +38,8 @@
 - [ ] Maps/rooms
   + [ ] Library for parsing some file format
 
-- [ ] HTTP gateway
-      https://dev.to/deciduously/skip-the-framework-build-a-simple-rust-api-with-hyper-4jf5
-      https://github.com/hyperium/hyper/blob/master/examples/multi_server.rs
-      https://github.com/hyperium/hyper/blob/master/examples/single_threaded.rs
+- [x] HTTP gateway
+  + [ ] Managing state
 
 - [ ] Security issues
   + [ ] DoS/flood control

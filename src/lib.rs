@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::SinkExt;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
@@ -379,7 +379,9 @@ pub async fn process(
     Ok(())
 }
 
-pub async fn serve(state: Arc<Mutex<State>>, listener: &mut TcpListener) -> io::Result<()> {
+pub async fn serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> io::Result<()> {
+    let mut listener = TcpListener::bind(&addr).await?;
+
     loop {
         let (stream, addr) = listener.accept().await?;
 
