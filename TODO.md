@@ -39,7 +39,8 @@
   + [ ] Library for parsing some file format
 
 - [x] HTTP gateway
-  + [ ] Managing state
+  + [x] Managing state
+  + [ ] Figure out API, set up interactions
 
 - [ ] Security issues
   + [ ] DoS/flood control
