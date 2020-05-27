@@ -1,5 +1,9 @@
 - [ ] Persistence
 
+- [ ] Registration
+  take email or twitter handle
+  name, pronouns
+
 - [ ] Options
   + [ ] passwords!
   + [ ] arrive/depart announcements
