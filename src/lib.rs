@@ -16,6 +16,8 @@ use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
+use tracing::{info, span, error, warn, trace, Level};
+
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 /// The global shared state
@@ -40,6 +42,7 @@ impl State {
     }
 
     pub fn shutdown(&mut self) {
+        warn!("shutdown initiated");
         std::process::exit(0);
     }
 
@@ -51,10 +54,11 @@ impl State {
 
     pub fn new_person(&mut self, name: &str) -> PersonId {
         let id = self.fresh_id();
+        info!(id=id, name=name, "registered");
 
         let name = name.to_string();
-        let person = Person { id, name };
 
+        let person = Person { id, name };
         self.people.insert(id, person);
 
         id
@@ -79,6 +83,8 @@ impl State {
 
     /// Send a message to _all_ peers.
     pub async fn broadcast(&mut self, message: Message) {
+        trace!(message = ?message, "broadcast");
+
         for p in self.queues.iter_mut() {
             let _ = p.1.send(message.clone());
         }
@@ -179,9 +185,18 @@ impl Command {
         }
     }
 
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Command::Say { .. } => "say",
+            Command::Shutdown => "shutdown",
+        }
+    }
+
     pub async fn run(self, state: Arc<Mutex<State>>, id: PersonId, name: &str) {
-        // TODO log
-        println!("{} ({}): {:?}", name, id, self);
+        let span = span!(Level::INFO, "command", id = id);
+        let _guard = span.enter();
+        info!(command = self.tag());
+
         match self {
             Command::Say { text } => {
                 state
@@ -329,13 +344,16 @@ pub async fn process(
     let name = login(state.clone(), &mut lines, addr).await?;
     let mut peer = TCPPeer::new(state.clone(), lines, name.clone()).await?;
 
+    let span = span!(Level::INFO, "session");
+    let _guard = span.enter();
+    info!(peer.id, "login");
+
     {
         let mut state = state.lock().await;
         let msg = Message::Arrive {
             id: peer.id,
             name: peer.name.clone(),
         };
-        println!("{:?}", msg); // TODO log
         state.broadcast(msg).await;
     }
 
@@ -353,10 +371,7 @@ pub async fn process(
             }
 
             Err(e) => {
-                println!(
-                    "an error occurred while processing messages for {}; error = {:?}",
-                    name, e
-                );
+                error!(?e, id = peer.id);
             }
         }
     }
@@ -372,23 +387,28 @@ pub async fn process(
             id: peer.id,
             name: peer.name.clone(),
         };
-        println!("{:?}", msg);
+        info!(id = peer.id, "logout");
         state.broadcast(msg).await;
     }
 
+    trace!("disconnected");
     Ok(())
 }
 
-pub async fn serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> io::Result<()> {
-    let mut listener = TcpListener::bind(&addr).await?;
+pub async fn tcp_serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> io::Result<()> {
+    let mut listener = TcpListener::bind(addr).await?;
 
     loop {
         let (stream, addr) = listener.accept().await?;
 
+        let span = span!(Level::INFO, "TCP connection");
+        let _guard = span.enter();
+        info!(?addr, "connected");
+
         let state = state.clone();
         tokio::spawn(async move {
             if let Err(e) = process(state, stream, addr).await {
-                println!("an error occurred; error = {:?}", e);
+                error!(?e);
             }
         });
     }

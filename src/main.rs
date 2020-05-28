@@ -9,17 +9,15 @@ use std::time::Duration;
 
 use tokio::sync::Mutex;
 
+use tracing::{info, Level};
+use tracing_subscriber;
+
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 
 use much::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("much v{}", VERSION);
-
-    let state = Arc::new(Mutex::new(State::new()));
-    println!("loaded state");
-
     let mut args = env::args();
 
     // TODO parse command-line arguments properly
@@ -28,18 +26,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     let http_port = args.next().unwrap_or_else(|| "4080".to_string());
     let timeout: Option<u64> = args.next().unwrap_or_else(|| "30".to_string()).parse().ok();
 
-    let tcp_server = serve(state.clone(), format!("{}:{}", addr, tcp_port));
-    let http_server = http_serve(state.clone(), format!("{}:{}", addr, http_port));
+    // initialize logging
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr) // TODO log to a file?
+        .with_max_level(Level::INFO)
+        .init();
+
+    info!("much v{}", VERSION);
+
+    let state = Arc::new(Mutex::new(State::new()));
+    info!("loaded state");
+
+    let tcp_addr = format!("{}:{}", addr, tcp_port);
+    let tcp_server = tcp_serve(state.clone(), tcp_addr.clone());
+    let http_addr = format!("{}:{}", addr, http_port);
+    let http_server = http_serve(state.clone(), http_addr.clone());
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
+    info!("initialized tokio runtime");
 
     runtime.spawn(tcp_server);
+    info!("started TCP server on {}", tcp_addr);
+
     runtime.spawn(http_server);
+    info!("started HTTP server on {}", http_addr);
 
     if let Some(secs) = timeout {
+        info!("shutdown timer: {} seconds", secs);
         runtime.shutdown_timeout(Duration::from_secs(secs));
     }
 
+    info!("shutting down");
     Ok(())
 }
 
@@ -56,14 +73,10 @@ async fn http_serve<A: ToSocketAddrs + std::fmt::Display>(
         addr_spec
     );
 
-    let make_svc = make_service_fn(move |_conn| { 
+    let make_svc = make_service_fn(move |_conn| {
         let state = state.clone();
 
-        async move {
-           Ok::<_, Infallible>(service_fn(move |req| {
-               hello_world(state.clone(), req)
-           }))
-        }
+        async move { Ok::<_, Infallible>(service_fn(move |req| hello_world(state.clone(), req))) }
     });
 
     let server = Server::bind(&addr).serve(make_svc);
@@ -73,6 +86,9 @@ async fn http_serve<A: ToSocketAddrs + std::fmt::Display>(
     }
 }
 
-async fn hello_world(_state: Arc<Mutex<State>>, _req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn hello_world(
+    _state: Arc<Mutex<State>>,
+    _req: Request<Body>,
+) -> Result<Response<Body>, Infallible> {
     Ok(Response::new(format!("much v{}", VERSION).into()))
 }

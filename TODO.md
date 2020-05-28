@@ -1,5 +1,6 @@
 - [ ] Performance questions
   Switch from Mutex to RwLock? Don't want to block out the writers...
+  Use parking_lot's RwLock (but maybe let's not switch to nightly)
 
 - [ ] Persistence
 
@@ -13,11 +14,11 @@
   + [ ] admin bit
   + [ ] permissions
 
-- [ ] Logging
-      https://docs.rs/tokio-trace/0.1.0/tokio_trace/
+- [x] Logging
+  + [ ] to a file
 
 - [x] Command framework
-  + [ ] Parsers
+  + [ ] Proper parser, with error messages, etc.
   + [ ] Documentation/help
   + Specific commands:
     * [ ] directed speech
