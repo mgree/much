@@ -18,8 +18,6 @@ use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
 use tracing::{info, span, error, warn, trace, Level};
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
 /// The global shared state
 pub struct State {
     next_id: PersonId,

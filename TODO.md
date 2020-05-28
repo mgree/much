@@ -47,6 +47,8 @@
   + [ ] DoS/flood control
         https://docs.rs/tokio/0.2.21/tokio/time/fn.throttle.html
         doesn't seem to work directly on TCPStreams
+  + [ ] multi-login: keep newest, kick oldest
+        needs new PeerMessage
   + [ ] CSRF protection
   + [ ] email verification
   + [ ] twitter verification
