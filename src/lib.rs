@@ -374,8 +374,9 @@ pub async fn login(
                 }
 
                 // TODO look up location
+                let loc = DUMMY_ROOM_ID;
 
-                return Ok((name.to_string(), DUMMY_ROOM_ID));
+                return Ok((name.to_string(), loc));
             }
             _ => return Err(Box::new(LoginAbortedError { addr })),
         }
