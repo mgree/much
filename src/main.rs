@@ -1,8 +1,6 @@
 extern crate much;
 
-use std::convert::Infallible;
 use std::error::Error;
-use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,13 +11,9 @@ use tokio::sync::Mutex;
 use tracing::{info, Level};
 use tracing_subscriber;
 
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
-
 use much::*;
 
 const NAME   : &'static str = env!("CARGO_PKG_NAME");
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -114,37 +108,4 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!("shutting down");
     Ok(())
-}
-
-async fn http_serve<A: ToSocketAddrs + std::fmt::Display>(
-    state: Arc<Mutex<State>>,
-    addr_spec: A,
-) -> Result<(), Box<dyn Error + Send>> {
-    let mut addrs = addr_spec.to_socket_addrs().unwrap();
-    let addr = addrs.next().unwrap();
-    assert_eq!(
-        addrs.next(),
-        None,
-        "expected a unique bind location for the HTTP server, but {} resolves to at least two",
-        addr_spec
-    );
-
-    let make_svc = make_service_fn(move |_conn| {
-        let state = state.clone();
-
-        async move { Ok::<_, Infallible>(service_fn(move |req| hello_world(state.clone(), req))) }
-    });
-
-    let server = Server::bind(&addr).serve(make_svc);
-    match server.await {
-        Ok(()) => Ok(()),
-        Err(e) => Err(Box::new(e)),
-    }
-}
-
-async fn hello_world(
-    _state: Arc<Mutex<State>>,
-    _req: Request<Body>,
-) -> Result<Response<Body>, Infallible> {
-    Ok(Response::new(format!("much v{}", VERSION).into()))
 }
