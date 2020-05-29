@@ -143,21 +143,23 @@ type RoomId = u64;
 
 const DUMMY_ROOM_ID: RoomId = 4747;
 
-// TODO pre-resolve names (currenly resolving once per player!!!); should also drop the state dependency on render
 /// Messages from, e.g., commands
 #[derive(Clone, Debug)]
 pub enum Message {
     Arrive {
         id: PersonId,
         name: String,
+        loc: RoomId,
     },
     Depart {
         id: PersonId,
         name: String,
+        loc: RoomId,
     },
     Say {
         speaker: PersonId,
         speaker_name: String,
+        loc: RoomId,
         text: String,
     },
 }
@@ -179,8 +181,8 @@ impl Message {
         }
     }
 
-    pub fn new_location(&self) -> Option<RoomId> {
-        // TODO actually read new location
+    pub fn new_location(&self, _receiver: PersonId) -> Option<RoomId> {
+        // TODO return a location on movement when receiver is the given id
         None
     }
 }
@@ -243,6 +245,7 @@ impl Command {
                         Message::Say {
                             speaker: id,
                             speaker_name: name.to_string(),
+                            loc,
                             text,
                         },
                     )
@@ -398,6 +401,7 @@ pub async fn process(
         let msg = Message::Arrive {
             id: peer.id,
             name: peer.name.clone(),
+            loc: peer.loc,
         };
         state.roomcast(loc, msg).await;
     }
@@ -411,7 +415,7 @@ pub async fn process(
             }
 
             Ok(PeerMessage::SendToPeer(msg)) => {
-                if let Some(loc) = msg.new_location() {
+                if let Some(loc) = msg.new_location(peer.id) {
                     peer.loc = loc;
                 }
                 let s = msg.render(peer.id).await;
@@ -434,6 +438,7 @@ pub async fn process(
         let msg = Message::Depart {
             id: peer.id,
             name: peer.name.clone(),
+            loc: peer.loc,
         };
         info!(id = peer.id, "logout");
         state.roomcast(loc, msg).await;
