@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::cmp::{Eq, PartialEq};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
@@ -10,7 +8,6 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
@@ -21,239 +18,22 @@ use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
-use tracing::{error, info, span, trace, warn, Level};
+use tracing::{error, info, span, trace, Level};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-/// The global shared state
-pub struct State {
-    next_id: PersonId,
-    /// Each PersonId is associated with Person data
-    people: HashMap<PersonId, Person>,
-    /// Each `Peer` is associated with a `PersonId`
-    peers: HashMap<Connection, PersonId>,
-    // Each PersonId has a corresponding message queue
-    queues: HashMap<PersonId, MessageQueueTX>,
-}
+mod game;
 
-impl State {
-    pub fn new() -> Self {
-        State {
-            next_id: 0,
-            people: HashMap::new(),
-            peers: HashMap::new(),
-            queues: HashMap::new(),
-        }
-    }
+use game::command::*;
+use game::message::*;
+use game::person::*;
+use game::room::*;
+use game::state::*;
 
-    pub fn shutdown(&mut self) {
-        warn!("shutdown initiated");
-        std::process::exit(0);
-    }
+pub type GameState = Arc<Mutex<State>>;
 
-    pub fn fresh_id(&mut self) -> PersonId {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
-    }
-
-    pub fn new_person(&mut self, name: &str) -> PersonId {
-        let id = self.fresh_id();
-        info!(id = id, name = name, "registered");
-
-        let name = name.to_string();
-
-        let person = Person { id, name };
-        self.people.insert(id, person);
-
-        id
-    }
-
-    pub fn person(&self, id: &PersonId) -> &Person {
-        assert!(self.people.contains_key(&id));
-        self.people.get(&id).unwrap()
-    }
-
-    pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
-        self.peers.insert(Connection::TCP { addr }, id);
-        self.queues.insert(id, tx);
-    }
-
-    pub fn unregister_tcp_connection(&mut self, addr: SocketAddr) {
-        let addr = Connection::TCP { addr };
-        assert!(self.peers.contains_key(&addr));
-
-        self.peers.remove(&addr);
-    }
-
-    /// Send a message to _all_ peers.
-    pub async fn broadcast(&mut self, message: Message) {
-        trace!(message = ?message, "broadcast");
-
-        for p in self.queues.iter_mut() {
-            let _ = p.1.send(message.clone());
-        }
-    }
-
-    /// Send a message to everyone in a given location
-    pub async fn roomcast(&mut self, loc: RoomId, message: Message) {
-        trace!(loc, message = ?message, "roomcast");
-
-        // TODO look up only those person ids in loc
-        let ids_in_room = self.queues.keys();
-        for id in ids_in_room {
-            let p = self.queues.get(id);
-
-            match p {
-                None => warn!(
-                    loc,
-                    id, "listed in room, but no message queue... disconnected?"
-                ),
-                Some(p) => match p.send(message.clone()) {
-                    Err(e) => warn!(loc, id, ?e, "bad message queue"),
-                    Ok(()) => (),
-                },
-            }
-        }
-    }
-}
-
-/// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
-/// or statelessly via an HTTP session
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum Connection {
-    TCP { addr: SocketAddr },
-    HTTP { session: String },
-}
-
-type MessageQueueTX = mpsc::UnboundedSender<Message>;
-type MessageQueueRX = mpsc::UnboundedReceiver<Message>;
-
-/// Unique ID numbers for each person
-type PersonId = u64;
-
-/// Someone who is connected
-pub struct Person {
-    id: PersonId,
-    name: String,
-}
-
-/// Unique ID numbers for each room
-type RoomId = u64;
-
-const DUMMY_ROOM_ID: RoomId = 4747;
-
-/// Messages from, e.g., commands
-#[derive(Clone, Debug)]
-pub enum Message {
-    Arrive {
-        id: PersonId,
-        name: String,
-        loc: RoomId,
-    },
-    Depart {
-        id: PersonId,
-        name: String,
-        loc: RoomId,
-    },
-    Say {
-        speaker: PersonId,
-        speaker_name: String,
-        loc: RoomId,
-        text: String,
-    },
-}
-
-impl Message {
-    pub async fn render(&self, receiver: PersonId) -> String {
-        // LATER i18n
-        match self {
-            Message::Arrive { id, .. } if *id == receiver => "".to_string(),
-            Message::Arrive { name, .. } => format!("{} arrived.", name),
-            Message::Depart { id, .. } if *id == receiver => "".to_string(),
-            Message::Depart { name, .. } => format!("{} left.", name),
-            Message::Say { speaker, text, .. } if *speaker == receiver => {
-                format!("You say, '{}'", text)
-            }
-            Message::Say {
-                speaker_name, text, ..
-            } => format!("{} says, '{}'", speaker_name, text),
-        }
-    }
-
-    pub fn new_location(&self, _receiver: PersonId) -> Option<RoomId> {
-        // TODO return a location on movement when receiver is the given id
-        None
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum Command {
-    Say { text: String },
-    Shutdown,
-}
-
-#[derive(Debug)]
-pub struct ParserError {
-    msg: String,
-}
-
-impl Error for ParserError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-}
-
-impl fmt::Display for ParserError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Parse error: {} is not a valid command.", self.msg)
-    }
-}
-
-impl Command {
-    pub fn parse(s: String) -> Result<Command, Box<dyn Error>> {
-        let s = s.trim();
-
-        if s == "shutdown" {
-            Ok(Command::Shutdown)
-        } else {
-            Ok(Command::Say {
-                text: s.to_string(),
-            })
-        }
-    }
-
-    pub fn tag(&self) -> &'static str {
-        match self {
-            Command::Say { .. } => "say",
-            Command::Shutdown => "shutdown",
-        }
-    }
-
-    pub async fn run(self, state: Arc<Mutex<State>>, loc: RoomId, id: PersonId, name: &str) {
-        let span = span!(Level::INFO, "command", id = id);
-        let _guard = span.enter();
-        info!(command = self.tag());
-
-        match self {
-            Command::Say { text } => {
-                state
-                    .lock()
-                    .await
-                    .roomcast(
-                        loc,
-                        Message::Say {
-                            speaker: id,
-                            speaker_name: name.to_string(),
-                            loc,
-                            text,
-                        },
-                    )
-                    .await
-            }
-            Command::Shutdown => state.lock().await.shutdown(),
-        }
-    }
+pub fn init() -> GameState {
+    Arc::new(Mutex::new(State::new()))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -285,7 +65,7 @@ struct TCPPeer {
 
 impl TCPPeer {
     async fn new(
-        state: Arc<Mutex<State>>,
+        state: GameState,
         lines: Framed<TcpStream, LinesCodec>,
         loc: RoomId,
         name: String,
@@ -351,7 +131,7 @@ impl fmt::Display for LoginAbortedError {
 }
 
 pub async fn login(
-    _state: Arc<Mutex<State>>,
+    _state: GameState,
     lines: &mut Framed<TcpStream, LinesCodec>,
     addr: SocketAddr,
 ) -> Result<(String, RoomId), Box<dyn Error>> {
@@ -384,7 +164,7 @@ pub async fn login(
 }
 
 pub async fn process(
-    state: Arc<Mutex<State>>,
+    state: GameState,
     stream: TcpStream,
     addr: SocketAddr,
 ) -> Result<(), Box<dyn Error>> {

@@ -1,10 +1,7 @@
 use std::error::Error;
-use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{App, Arg};
-
-use tokio::sync::Mutex;
 
 use tracing::{info, Level};
 use tracing_subscriber;
@@ -80,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!("much v{}", much::VERSION);
 
-    let state = Arc::new(Mutex::new(much::State::new()));
+    let state = much::init();
     info!("loaded state");
 
     let tcp_addr = format!("{}:{}", addr, tcp_port);
