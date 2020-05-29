@@ -1,5 +1,3 @@
-extern crate much;
-
 use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,14 +9,14 @@ use tokio::sync::Mutex;
 use tracing::{info, Level};
 use tracing_subscriber;
 
-use much::*;
+use much;
 
 const NAME   : &'static str = env!("CARGO_PKG_NAME");
 const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
 
 fn main() -> Result<(), Box<dyn Error>> {
     let config = App::new(NAME)
-        .version(VERSION)
+        .version(much::VERSION)
         .author(AUTHORS)
         .about("Multi-user conference hall")
         .arg(
@@ -80,15 +78,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_max_level(verbosity)
         .init();
 
-    info!("much v{}", VERSION);
+    info!("much v{}", much::VERSION);
 
-    let state = Arc::new(Mutex::new(State::new()));
+    let state = Arc::new(Mutex::new(much::State::new()));
     info!("loaded state");
 
     let tcp_addr = format!("{}:{}", addr, tcp_port);
-    let tcp_server = tcp_serve(state.clone(), tcp_addr.clone());
+    let tcp_server = much::tcp_serve(state.clone(), tcp_addr.clone());
     let http_addr = format!("{}:{}", addr, http_port);
-    let http_server = http_serve(state.clone(), http_addr.clone());
+    let http_server = much::http_serve(state.clone(), http_addr.clone());
 
     let runtime = tokio::runtime::Runtime::new()?;
     info!("initialized tokio runtime");

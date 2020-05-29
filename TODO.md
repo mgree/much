@@ -75,7 +75,7 @@ The `who` command will do that in any case. Do we even want a `where` command?
   + [ ] DoS/flood control
         https://docs.rs/tokio/0.2.21/tokio/time/fn.throttle.html
         doesn't seem to work directly on TCPStreams
-  + [ ] multi-login: keep newest, kick oldest
+  + [ ] multi-login via TCP: keep newest, kick oldest
         needs new PeerMessage
   + [ ] CSRF protection
   + [ ] email verification
