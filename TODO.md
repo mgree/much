@@ -18,6 +18,7 @@
 
 - [x] Logging
   + [ ] to a file
+  + [ ] both at once?
 
 - [x] Command framework
   + [ ] Proper parser, with error messages, etc.
@@ -41,6 +42,7 @@
     * [ ] invite (to a private room)
     * [ ] transfer (ownership of a private room)
     * [ ] profile info/editing
+    * [ ] status (afk/in a meeting/invisible)
     * [x] shutdown
 
 - [ ] Maps/rooms
@@ -58,15 +60,17 @@
 |Route                |Function                                          |
 |:--------------------|:-------------------------------------------------|
 |/                    |if logged in, redirect to lobby; otherwise login  |
-|/room/<ROOM>         |interact in given room (or redirect to login)     |
-|/room/<ROOM>/do      |POST commands                                     |
-|/room/<ROOM>/be      |GET to poll (at least very 30s to stay logged in) |
 |/register            |registration form                                 |
-|/login               |POST login info                                   |
-|/logout              |logout                                            |
 |/user/<PERSONID>     |user profile page                                 |
+|/room/<ROOM>         |interact in given room (or redirect to login)     |
+|/who                 |listing of who is online                          |
 |/help                |help pages (generate command docs automatically?) |
 |/admin               |admin console?                                    |
+|/api/do/<ROOM>       |POST commands                                     |
+|/api/be/<ROOM>       |GET to poll (at least very 30s to stay logged in) |
+|/api/login           |POST login info                                   |
+|/api/logout          |logout                                            |
+|/api/who             |current listing of who is online                  |
 
 Use https://docs.rs/tokio/0.2.21/tokio/time/struct.DelayQueue.html for /be
 
@@ -88,7 +92,7 @@ The `who` command will do that in any case. Do we even want a `where` command?
     * Online status
     * Location (option to turn off?)
 
-- [ ] Testing
+- [ ] Testing!!!
   + [ ] Functionality
         Mocking?
   + [ ] Under load
