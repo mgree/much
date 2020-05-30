@@ -68,6 +68,8 @@
 |/help                |help pages (generate command docs automatically?) |
 |/admin               |admin console?                                    |
 
+Use https://docs.rs/tokio/0.2.21/tokio/time/struct.DelayQueue.html for /be
+
 We probably _shouldn't_ let people know where people are... but surely we want to know if they're logged in?
 The `who` command will do that in any case. Do we even want a `where` command?
 
