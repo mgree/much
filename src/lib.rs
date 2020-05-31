@@ -23,13 +23,13 @@ use tracing::{error, info, span, trace, Level};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-mod game;
+mod world;
 
-use game::command::*;
-use game::message::*;
-use game::person::*;
-use game::room::*;
-use game::state::*;
+use world::command::*;
+use world::message::*;
+use world::person::*;
+use world::room::*;
+use world::state::*;
 
 pub type GameState = Arc<Mutex<State>>;
 
