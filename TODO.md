@@ -27,8 +27,8 @@
     * [ ] directed speech
     * [ ] emotes (manual and prefab)
     * [ ] private speech (tell)
-    * [ ] mute (get no events from)
-    * [ ] block (send no events to?)
+    * [ ] mute (get no events from); [ ] block (send no events to?)
+        make sure this gets charged to the _muter_/_blocker_'s thread (i.e., filter on message receipt)
     * [ ] kick
     * [ ] ban
           id, ip, ip range... timer?
@@ -58,6 +58,9 @@
   + [x] Routing
   + [ ] Sessions
     * [ ] in-memory tracking
+          Set<SessionId> of valid sessions
+          HashMap<SessionId,PersonId>
+          or... just the HashMap? no session if not logged in?
     * [ ] logs per session of IP accesses on file system (write-only?)
   + [ ] Figure out API, set up interactions
 
@@ -66,17 +69,21 @@
 |/                    |if logged in, redirect to lobby; otherwise login  |
 |/register            |registration form (GET form, POST results         |
 |/user/<PERSONID>     |user profile page                                 |
-|/room/<ROOM>         |interact in given room (or redirect to login)     |
+|/room?<ROOMID>       |interact in given room (or redirect to login)     |
+|/room?<ROOMNAME>     |interact in given room (or redirect to login)     |
 |/who                 |listing of who is online                          |
 |/help                |help pages (generate command docs automatically?) |
 |/admin               |admin console?                                    |
-|/api/do/<ROOM>       |POST commands                                     |
-|/api/be/<ROOM>       |GET to poll (at least very 30s to stay logged in) |
+|/api/do?<ROOMID>     |POST commands                                     |
+|/api/be?<ROOMID>     |GET to poll (at least very 30s to stay logged in) |
 |/api/login           |POST login info                                   |
 |/api/logout          |logout                                            |
 |/api/who             |current listing of who is online                  |
 
-Use https://docs.rs/tokio/0.2.21/tokio/time/struct.DelayQueue.html for /be
+Use https://docs.rs/tokio/0.2.21/tokio/time/struct.DelayQueue.html for keepalive
+  Each session has HashMap<RoomId,Key> for Keys from a DelayQueue
+  Remove Key for given room on every hit to /be or /do
+  Get a new Key from DelayQueue for 30s-1min in the future to drop from the room, save Key
 
 We probably _shouldn't_ let people know where people are... but surely we want to know if they're logged in?
 The `who` command will do that in any case. Do we even want a `where` command?
