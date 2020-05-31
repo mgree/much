@@ -57,10 +57,7 @@
   + [x] Managing state in hyper
   + [x] Routing
   + [ ] Sessions
-    * [ ] in-memory tracking
-          Set<SessionId> of valid sessions
-          HashMap<SessionId,PersonId>
-          or... just the HashMap? no session if not logged in?
+    * [x] in-memory tracking
     * [ ] logs per session of IP accesses on file system (write-only?)
   + [ ] Figure out API, set up interactions
 
@@ -75,16 +72,11 @@
 |/help                |help pages (generate command docs automatically?) |
 |/admin               |admin console?                                    |
 |/api/do?<ROOMID>     |POST commands                                     |
-|/api/be?<ROOMID>     |GET to poll (at least very 30s to stay logged in) |
+|/api/be?<ROOMID>     |GET to poll (at least every 30s to stay logged in)|
 |/api/leave?<ROOMID>  |GET to exit room (window.onclose, etc.)           |
 |/api/login           |POST login info                                   |
 |/api/logout          |logout                                            |
 |/api/who             |current listing of who is online                  |
-
-Use https://docs.rs/tokio/0.2.21/tokio/time/struct.DelayQueue.html for keepalive
-  Each session has HashMap<RoomId,Key> for Keys from a DelayQueue
-  Remove Key for given room on every hit to /be or /do
-  Get a new Key from DelayQueue for 30s-1min in the future to drop from the room, save Key
 
 We probably _shouldn't_ let people know where people are... but surely we want to know if they're logged in?
 The `who` command will do that in any case. Do we even want a `where` command?

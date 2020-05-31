@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use tokio::time::DelayQueue;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
@@ -255,6 +257,27 @@ pub async fn tcp_serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> i
 
 /// The cookie in which we store sessions
 const MUCHSESSIONID : &'static str = "MUCHSESSIONID";
+
+/// Time-to-live in a room between calls to `/api/be`
+const HTTP_TTL_SECS: u64 = 30;
+
+pub type SessionId = String;
+
+pub struct HTTPState {
+    sessions: HashMap<SessionId, PersonId>,
+    // TODO call reset on a hit to /do or /be
+    // TODO someone needs to be polling this queue and dropping people from rooms
+    timeouts: DelayQueue<(SessionId, RoomId)>,
+}
+
+impl HTTPState {
+    pub fn new() -> Self {
+        HTTPState {
+            sessions: HashMap::new(),
+            timeouts: DelayQueue::new(),
+        }
+    }
+}
 
 pub async fn http_serve<A: std::net::ToSocketAddrs + std::fmt::Display>(
     state: Arc<Mutex<State>>,

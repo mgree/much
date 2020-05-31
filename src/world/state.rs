@@ -33,6 +33,7 @@ impl State {
 
     pub fn shutdown(&mut self) {
         warn!("shutdown initiated");
+        // TODO coordinate with top-level tokio runtime via tokio::sync::oneshot
         std::process::exit(0);
     }
 
