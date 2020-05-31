@@ -76,6 +76,7 @@
 |/admin               |admin console?                                    |
 |/api/do?<ROOMID>     |POST commands                                     |
 |/api/be?<ROOMID>     |GET to poll (at least very 30s to stay logged in) |
+|/api/leave?<ROOMID>  |GET to exit room (window.onclose, etc.)           |
 |/api/login           |POST login info                                   |
 |/api/logout          |logout                                            |
 |/api/who             |current listing of who is online                  |

@@ -316,6 +316,7 @@ async fn http_route(
         // TODO cache-control on these end points
         (&Method::GET, "/api/be") => http_unimplemented(state, req, &mut resp).await,
         (&Method::POST, "/api/do") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/api/leave") => http_unimplemented(state, req, &mut resp).await,
         (&Method::POST, "/api/login") => http_unimplemented(state, req, &mut resp).await,
         (&Method::POST, "/api/logout") => http_unimplemented(state, req, &mut resp).await,
         (&Method::POST, "/api/who") => http_unimplemented(state, req, &mut resp).await,

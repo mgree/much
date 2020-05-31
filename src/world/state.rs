@@ -104,11 +104,15 @@ impl State {
 }
 
 /// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
-/// or statelessly via an HTTP session
+/// or statelessly via an HTTP session (possibly in multiple rooms!).
+/// 
+/// Each such connection will have its own message queue.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Connection {
+    /// TCP sessions merely need to track the peer
     TCP { addr: SocketAddr },
-    HTTP { session: String },
+    /// Each HTTP session (keyed by the `String` in the cookie) can be in more than one room at a time---and each one needs its own queue
+    HTTP { session: String, loc: RoomId },
 }
 
 pub type MessageQueueTX = mpsc::UnboundedSender<Message>;
