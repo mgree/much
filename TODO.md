@@ -54,13 +54,17 @@
   + [ ] Library for parsing some file format
 
 - [x] HTTP gateway
-  + [x] Managing state
+  + [x] Managing state in hyper
+  + [x] Routing
+  + [ ] Sessions
+    * [ ] in-memory tracking
+    * [ ] logs per session of IP accesses on file system (write-only?)
   + [ ] Figure out API, set up interactions
 
 |Route                |Function                                          |
 |:--------------------|:-------------------------------------------------|
 |/                    |if logged in, redirect to lobby; otherwise login  |
-|/register            |registration form                                 |
+|/register            |registration form (GET form, POST results         |
 |/user/<PERSONID>     |user profile page                                 |
 |/room/<ROOM>         |interact in given room (or redirect to login)     |
 |/who                 |listing of who is online                          |

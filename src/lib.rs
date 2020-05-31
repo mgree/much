@@ -10,7 +10,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
+use hyper::server::conn::AddrStream;
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 use futures::SinkExt;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
@@ -252,6 +253,9 @@ pub async fn tcp_serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> i
 // HTTP STUFF
 ////////////////////////////////////////////////////////////////////////////////
 
+/// The cookie in which we store sessions
+const MUCHSESSIONID : &'static str = "MUCHSESSIONID";
+
 pub async fn http_serve<A: std::net::ToSocketAddrs + std::fmt::Display>(
     state: Arc<Mutex<State>>,
     addr_spec: A,
@@ -265,10 +269,11 @@ pub async fn http_serve<A: std::net::ToSocketAddrs + std::fmt::Display>(
         addr_spec
     );
 
-    let make_svc = make_service_fn(move |_conn| {
+    let make_svc = make_service_fn(move |conn: &AddrStream| {
         let state = state.clone();
+        let remote_addr = conn.remote_addr();
 
-        async move { Ok::<_, Infallible>(service_fn(move |req| hello_world(state.clone(), req))) }
+        async move { Ok::<_, Infallible>(service_fn(move |req| http_route(state.clone(), remote_addr, req))) }
     });
 
     let server = Server::bind(&addr).serve(make_svc);
@@ -278,9 +283,53 @@ pub async fn http_serve<A: std::net::ToSocketAddrs + std::fmt::Display>(
     }
 }
 
-async fn hello_world(
-    _state: Arc<Mutex<State>>,
-    _req: Request<Body>,
+async fn http_route(
+    state: Arc<Mutex<State>>,
+    client: SocketAddr,
+    req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
-    Ok(Response::new(format!("much v{}", VERSION).into()))
+    let span = span!(Level::INFO, "HTTP request", client = ?client, method = ?req.method(), uri = ?req.uri());
+    let _guard = span.enter();
+
+    let mut resp = Response::new(Body::empty());
+
+    // TODO session info
+    // need to thread a session table through everywhere (keep it separate from the state? it's HTTP only...)
+    // see if cookie exists. if not, generate a new session (and store it in the table)
+    // if so, get peer information appropriately (in the handler? not everyone needs the info...)
+
+    trace!("routing");
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/") => http_unimplemented(state, req, &mut resp).await,
+
+        (&Method::GET, "/register") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/register") => http_unimplemented(state, req, &mut resp).await,
+
+        (&Method::GET, "/user") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::GET, "/room") => http_unimplemented(state, req, &mut resp).await,
+
+        (&Method::GET, "/who") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::GET, "/help") => http_unimplemented(state, req, &mut resp).await,
+
+        (&Method::GET, "/admin") => http_unimplemented(state, req, &mut resp).await,
+
+        // TODO cache-control on these end points
+        (&Method::GET, "/api/be") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/api/do") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/api/login") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/api/logout") => http_unimplemented(state, req, &mut resp).await,
+        (&Method::POST, "/api/who") => http_unimplemented(state, req, &mut resp).await,
+        _ => {
+            *resp.status_mut() = StatusCode::NOT_FOUND;
+            *resp.body_mut() = Body::from("404 Not Found");
+        },
+    };
+
+    info!(status = ?resp.status());
+    Ok(resp)
+}
+
+async fn http_unimplemented(_state: Arc<Mutex<State>>, _req: Request<Body>, resp: &mut Response<Body>) {
+    *resp.status_mut() = StatusCode::NOT_IMPLEMENTED;
+    *resp.body_mut() = Body::from("501 Not Implemented");
 }
