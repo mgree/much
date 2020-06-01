@@ -73,7 +73,7 @@
 |/admin               |admin console?                                    |
 |/api/do?<ROOMID>     |POST commands                                     |
 |/api/be?<ROOMID>     |GET to poll (at least every 30s to stay logged in)|
-|/api/leave?<ROOMID>  |GET to exit room (window.onclose, etc.)           |
+|/api/leave?<ROOMID>  |POST to exit room (window.onclose, etc.)          |
 |/api/login           |POST login info                                   |
 |/api/logout          |logout                                            |
 |/api/who             |current listing of who is online                  |
@@ -88,6 +88,8 @@ The `who` command will do that in any case. Do we even want a `where` command?
   + [ ] multi-login via TCP: keep newest, kick oldest
         needs new PeerMessage
   + [ ] CSRF protection
+        only for state-changing operations (do, login, logout, leave)
+        double-submit cookies (session ID needs to be a hidden form value?)
   + [ ] email verification
   + [ ] twitter verification
   + For profile information, we should be very clear about what we give out:

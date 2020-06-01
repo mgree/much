@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use rand::RngCore;
 use tokio::time::DelayQueue;
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -256,15 +257,23 @@ pub async fn tcp_serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> i
 ////////////////////////////////////////////////////////////////////////////////
 
 /// The cookie in which we store sessions
-const MUCHSESSIONID : &'static str = "MUCHSESSIONID";
+const SESSIONID : &'static str = "id";
+
+/// The name of the CSRF token variable for POST requests
+const CSRFTOKEN : &'static str = "tok";
 
 /// Time-to-live in a room between calls to `/api/be`
 const HTTP_TTL_SECS: u64 = 30;
 
 pub type SessionId = String;
 
+type CSRFToken = String;
+
 pub struct HTTPState {
+    /// CSPRNG for session and CSRF tokens
+    csprng: rand::rngs::StdRng,
     sessions: HashMap<SessionId, PersonId>,
+    tokens: HashMap<SessionId, CSRFToken>,
     // TODO call reset on a hit to /do or /be
     // TODO someone needs to be polling this queue and dropping people from rooms
     timeouts: DelayQueue<(SessionId, RoomId)>,
@@ -273,9 +282,39 @@ pub struct HTTPState {
 impl HTTPState {
     pub fn new() -> Self {
         HTTPState {
+            csprng: rand::SeedableRng::from_rng(rand::thread_rng()).unwrap(),
             sessions: HashMap::new(),
+            tokens: HashMap::new(),
             timeouts: DelayQueue::new(),
         }
+    }
+
+    fn gen_token(&mut self) -> String {
+        // generate random value
+        let mut buf: [u8; 16] = [0; 16];
+        self.csprng.fill_bytes(&mut buf);
+
+        // make it text
+        base64::encode(buf)
+    }
+
+    pub fn gen_session_id_for(&mut self, id: PersonId) -> CSRFToken {
+        let session = self.gen_token();
+
+        // record the session
+        self.sessions.insert(session.clone(), id);
+
+        session
+    }
+
+    pub fn gen_csrf_token_for(&mut self, session: SessionId) -> SessionId {
+        let token = self.gen_token();
+
+        // record the token for the session
+        // TODO if we already have one... old pages are now out of date... keep a set of them?
+        self.tokens.insert(session.clone(), token.clone());
+
+        token
     }
 }
 
