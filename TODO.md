@@ -60,8 +60,7 @@
     * [x] in-memory tracking
     * [ ] logs per session of IP accesses on file system (write-only?)
   + [ ] Figure out API, set up interactions
-    how should /api/be interact with the single global message queue?
-    really... don't we want a queue per connection?
+    /api/be drains the queue for that peer (which is room associated)
 
 |Route                |Function                                          |
 |:--------------------|:-------------------------------------------------|
