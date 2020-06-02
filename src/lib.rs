@@ -235,6 +235,7 @@ pub async fn login(
     )
     .await?;
 
+    let conn = Connection::TCP { addr };
     let p = state.lock().await.person_by_name(&name);
 
     match p {
@@ -265,7 +266,7 @@ pub async fn login(
             )
             .await?;
 
-            return Ok(person);
+            return Ok(Person::new(&person, conn));
         }
         None => loop {
             let password1 = prompt(
@@ -293,7 +294,7 @@ pub async fn login(
                     }
 
                     let person = state.lock().await.new_person(&name, &password1);
-                    return Ok(person);
+                    return Ok(Person::new(&person, conn));
                 }
                 _ => {
                     return Err(Box::new(LoginAbortedError {
@@ -314,14 +315,13 @@ pub async fn process(
     let mut lines = Framed::new(stream, LinesCodec::new());
 
     let person = login(state.clone(), &mut lines, addr).await?;
-    let world_peer = Peer::new(&person, Connection::TCP { addr });
     let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
 
     let span = span!(Level::INFO, "session");
     let _guard = span.enter();
     info!(peer.id, "login");
 
-    state.lock().await.arrive(&world_peer, peer.loc).await;
+    state.lock().await.arrive(&person, peer.loc).await;
 
     while let Some(result) = peer.next().await {
         match result {
@@ -352,7 +352,7 @@ pub async fn process(
         state.unregister_tcp_connection(peer.id, addr);
 
         // announce it to everyone
-        state.depart(&world_peer, peer.loc).await;
+        state.depart(&person, peer.loc).await;
     }
     info!(id = peer.id, "logout");
 

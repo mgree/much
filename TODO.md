@@ -1,8 +1,8 @@
-- [ ] Refactor
-      Person -> PersonRecord
-      Peer -> Person
-      
-      don't expose PersonRecords in general, have state login/register logic return Person
+- [ ] Give up on multi-presence
+      HTTP connections should just be able to be in one place at a time
+      loading a new location URL is equivalent to running `go URL`
+      prompt on multi-connect to disconnect other connection
+      simplify state!
 
 - [ ] Performance questions
   Switch from Mutex to RwLock? Don't want to block out the writers...

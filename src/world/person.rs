@@ -1,4 +1,5 @@
 use crate::world::room::*;
+use crate::world::state::Connection;
 
 /// Unique ID numbers for each person
 pub type PersonId = u64;
@@ -6,11 +7,30 @@ pub type PersonId = u64;
 // Number of characters to use for the password salt
 pub const PASSWD_SALT_LENGTH: usize = 16; 
 
-// TODO offer a shorter version of this, w/o password info---use THAT one in memory
+/// A logged-in connection to the server
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Person {
+    pub id: PersonId,
+    pub name: String,
+    /// Last known location/default location
+    pub loc: RoomId,
+    pub conn: Connection,
+}
+
+impl Person {
+    pub fn new(p: &PersonRecord, conn: Connection) -> Self {
+        Person {
+            id: p.id,
+            name: p.name.clone(),
+            loc: p.loc,
+            conn,
+        }
+    }
+}
 
 /// A person/user. Not necessarily connected.
 #[derive(Clone)]
-pub struct Person {
+pub struct PersonRecord {
     pub id: PersonId,
     pub name: String,
     /// Last known location/default location

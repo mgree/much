@@ -24,11 +24,11 @@ pub struct State {
     /// Next person ID to generate
     next_id: PersonId,
     /// Each PersonId is associated with Person data
-    people: HashMap<PersonId, Person>,
+    people: HashMap<PersonId, PersonRecord>,
     /// Index of names to PersonId
     names: HashMap<String, PersonId>,
     /// Who is in a room
-    rooms: HashMap<RoomId, HashSet<Peer>>,
+    rooms: HashMap<RoomId, HashSet<Person>>,
 
     /// CONNECTION INFO
     ///
@@ -66,7 +66,7 @@ impl State {
         id
     }
 
-    pub fn new_person(&mut self, name: &str, password: &str) -> Person {
+    pub fn new_person(&mut self, name: &str, password: &str) -> PersonRecord {
         let id = self.fresh_id();
         info!(id = id, name = name, "registered");
 
@@ -86,7 +86,7 @@ impl State {
             argon2::hash_encoded(password.as_bytes(), salt.as_bytes(), &self.password_config)
                 .unwrap();
 
-        let person = Person {
+        let person = PersonRecord {
             id,
             loc: INITIAL_LOC,
             name,
@@ -99,12 +99,12 @@ impl State {
         person
     }
 
-    pub fn person(&self, id: &PersonId) -> &Person {
+    pub fn person(&self, id: &PersonId) -> &PersonRecord {
         assert!(self.people.contains_key(&id));
         self.people.get(&id).unwrap()
     }
 
-    pub fn person_by_name(&self, name: &str) -> Option<Person> {
+    pub fn person_by_name(&self, name: &str) -> Option<PersonRecord> {
         let id = self.names.get(name)?;
         self.people.get(id).map(|p| p.clone()).or_else(|| {
             error!(name, id, "in names but not people");
@@ -177,7 +177,7 @@ impl State {
         }
     }
 
-    pub async fn depart(&mut self, peer: &Peer, loc: RoomId) {
+    pub async fn depart(&mut self, peer: &Person, loc: RoomId) {
         info!(?peer, "depart");
 
         let room = self.rooms.get_mut(&loc).unwrap();
@@ -192,7 +192,7 @@ impl State {
         self.roomcast(loc, msg).await;
     }
 
-    pub async fn arrive(&mut self, peer: &Peer, loc: RoomId) {
+    pub async fn arrive(&mut self, peer: &Person, loc: RoomId) {
         info!(?peer, "arrive");
 
         let room = self.rooms.get_mut(&loc).unwrap();
@@ -205,24 +205,6 @@ impl State {
             loc: loc,
         };
         self.roomcast(loc, msg).await;
-    }
-}
-
-/// A logged-in connection to the server
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Peer {
-    id: PersonId,
-    name: String,
-    conn: Connection,
-}
-
-impl Peer {
-    pub fn new(p: &Person, conn: Connection) -> Self {
-        Peer {
-            id: p.id,
-            name: p.name.clone(),
-            conn,
-        }
     }
 }
 
