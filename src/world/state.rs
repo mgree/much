@@ -27,21 +27,27 @@ pub struct State {
     people: HashMap<PersonId, Person>,
     /// Index of names to PersonId
     names: HashMap<String, PersonId>,
+    /// Who is in a room
+    rooms: HashMap<RoomId, HashSet<Peer>>,
 
     /// CONNECTION INFO
     ///
     /// Each `PersonId` has some number of connections
     peers: HashMap<PersonId, HashSet<Connection>>,
-    // Each PersonId has a corresponding message queue
-    queues: HashMap<PersonId, MessageQueueTX>,
+    /// Each Connection has a corresponding message queue
+    queues: HashMap<Connection, MessageQueueTX>,
 }
 
 impl State {
     pub fn new() -> Self {
+        let mut rooms = HashMap::new();
+        rooms.insert(INITIAL_LOC, HashSet::new());
+
         State {
             next_id: 0,
             people: HashMap::new(),
             names: HashMap::new(),
+            rooms,
             peers: HashMap::new(),
             queues: HashMap::new(),
             password_config: argon2::Config::default(),
@@ -107,32 +113,35 @@ impl State {
     }
 
     pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
+        let conn = Connection::TCP { addr };
+
         match self.peers.get_mut(&id) {
             Some(conns) => { 
-                let _ = conns.insert(Connection::TCP { addr });
+                let _ = conns.insert(conn.clone());
             },
             None => { 
                 let mut conns = HashSet::new();
-                conns.insert(Connection::TCP { addr });
+                conns.insert(conn.clone());
                 self.peers.insert(id, conns);
             },
         };
-        self.queues.insert(id, tx);
+        self.queues.insert(conn, tx);
     }
 
     pub fn unregister_tcp_connection(&mut self, id: PersonId, addr: SocketAddr) {
-        assert!(self.peers.contains_key(&id));
+        let conn = Connection::TCP { addr };
 
-        let addr = Connection::TCP { addr };
+        assert!(self.peers.contains_key(&id));
+        assert!(self.queues.contains_key(&conn));
 
         let conns = self.peers.get_mut(&id).unwrap();
-        assert!(conns.contains(&addr));
+        assert!(conns.contains(&conn));
 
-        conns.remove(&addr);
+        conns.remove(&conn);
 
         if conns.is_empty() {
             info!(id=id, "last connection, dropping queues");
-            self.queues.remove(&id);
+            self.queues.remove(&conn);
         }
     }
 
@@ -150,29 +159,78 @@ impl State {
         trace!(loc, message = ?message, "roomcast");
 
         // TODO look up only those person ids in loc
-        let ids_in_room = self.queues.keys();
-        for id in ids_in_room {
-            let p = self.queues.get(id);
+        let room_conns = self.peers.values().flatten();
+
+        for conn in room_conns {
+            let p = self.queues.get(&conn);
 
             match p {
                 None => warn!(
                     loc,
-                    id, "listed in room, but no message queue... disconnected?"
+                    ?conn, "listed in room, but no message queue... disconnected?"
                 ),
                 Some(p) => match p.send(message.clone()) {
-                    Err(e) => warn!(loc, id, ?e, "bad message queue"),
+                    Err(e) => warn!(loc, ?conn, ?e, "bad message queue"),
                     Ok(()) => (),
                 },
             }
         }
     }
+
+    pub async fn depart(&mut self, peer: &Peer, loc: RoomId) {
+        info!(?peer, "depart");
+
+        let room = self.rooms.get_mut(&loc).unwrap();
+
+        room.remove(peer);
+
+        let msg = Message::Depart {
+            id: peer.id,
+            name: peer.name.clone(),
+            loc: loc,
+        };
+        self.roomcast(loc, msg).await;
+    }
+
+    pub async fn arrive(&mut self, peer: &Peer, loc: RoomId) {
+        info!(?peer, "arrive");
+
+        let room = self.rooms.get_mut(&loc).unwrap();
+
+        room.insert(peer.clone());
+
+        let msg = Message::Arrive {
+            id: peer.id,
+            name: peer.name.clone(),
+            loc: loc,
+        };
+        self.roomcast(loc, msg).await;
+    }
 }
 
-/// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
+/// A logged-in connection to the server
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Peer {
+    id: PersonId,
+    name: String,
+    conn: Connection,
+}
+
+impl Peer {
+    pub fn new(p: &Person, conn: Connection) -> Self {
+        Peer {
+            id: p.id,
+            name: p.name.clone(),
+            conn,
+        }
+    }
+}
+
+/// A connection to the server, either directly over TCP (e.g., telnet or a MUD client)
 /// or statelessly via an HTTP session (possibly in multiple rooms!).
 ///
 /// Each such connection will have its own message queue.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Connection {
     /// TCP sessions merely need to track the peer
     TCP { addr: SocketAddr },

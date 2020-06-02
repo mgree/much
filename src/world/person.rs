@@ -6,6 +6,8 @@ pub type PersonId = u64;
 // Number of characters to use for the password salt
 pub const PASSWD_SALT_LENGTH: usize = 16; 
 
+// TODO offer a shorter version of this, w/o password info---use THAT one in memory
+
 /// A person/user. Not necessarily connected.
 #[derive(Clone)]
 pub struct Person {

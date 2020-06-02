@@ -45,7 +45,7 @@
     * [ ] status (afk/in a meeting/invisible)
     * [x] shutdown
 
-- [ ] Maps/rooms
+- [x] Maps/rooms
   + [ ] movement commands
     * [ ] relative movement
     * [ ] go takes a room name or URL
@@ -60,6 +60,8 @@
     * [x] in-memory tracking
     * [ ] logs per session of IP accesses on file system (write-only?)
   + [ ] Figure out API, set up interactions
+    how should /api/be interact with the single global message queue?
+    really... don't we want a queue per connection?
 
 |Route                |Function                                          |
 |:--------------------|:-------------------------------------------------|

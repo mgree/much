@@ -265,7 +265,7 @@ pub async fn login(
             )
             .await?;
 
-            return Ok(person.clone());
+            return Ok(person);
         }
         None => loop {
             let password1 = prompt(
@@ -314,21 +314,14 @@ pub async fn process(
     let mut lines = Framed::new(stream, LinesCodec::new());
 
     let person = login(state.clone(), &mut lines, addr).await?;
+    let world_peer = Peer::new(&person, Connection::TCP { addr });
     let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
 
     let span = span!(Level::INFO, "session");
     let _guard = span.enter();
     info!(peer.id, "login");
 
-    {
-        let mut state = state.lock().await;
-        let msg = Message::Arrive {
-            id: peer.id,
-            name: peer.name.clone(),
-            loc: peer.loc,
-        };
-        state.roomcast(peer.loc, msg).await;
-    }
+    state.lock().await.arrive(&world_peer, peer.loc).await;
 
     while let Some(result) = peer.next().await {
         match result {
@@ -359,14 +352,10 @@ pub async fn process(
         state.unregister_tcp_connection(peer.id, addr);
 
         // announce it to everyone
-        let msg = Message::Depart {
-            id: peer.id,
-            name: peer.name.clone(),
-            loc: peer.loc,
-        };
-        info!(id = peer.id, "logout");
-        state.roomcast(peer.loc, msg).await;
+        state.depart(&world_peer, peer.loc).await;
     }
+    info!(id = peer.id, "logout");
+
 
     trace!("disconnected");
     Ok(())
