@@ -1,10 +1,12 @@
 use std::cmp::{Eq, PartialEq};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
-use tokio::sync::{mpsc};
+use rand::RngCore;
 
-use tracing::{info, trace, warn};
+use tokio::sync::mpsc;
+
+use tracing::{error, info, trace, warn};
 
 use crate::world::message::*;
 use crate::world::person::*;
@@ -12,11 +14,24 @@ use crate::world::room::*;
 
 /// The global shared state
 pub struct State {
+    /// CONFIGURATION
+    /// 
+    /// Password hashing configuration
+    password_config: argon2::Config<'static>,
+
+    /// DATABASE
+    /// 
+    /// Next person ID to generate
     next_id: PersonId,
     /// Each PersonId is associated with Person data
     people: HashMap<PersonId, Person>,
-    /// Each `Peer` is associated with a `PersonId`
-    peers: HashMap<Connection, PersonId>,
+    /// Index of names to PersonId
+    names: HashMap<String, PersonId>,
+
+    /// CONNECTION INFO
+    ///
+    /// Each `PersonId` has some number of connections
+    peers: HashMap<PersonId, HashSet<Connection>>,
     // Each PersonId has a corresponding message queue
     queues: HashMap<PersonId, MessageQueueTX>,
 }
@@ -26,8 +41,10 @@ impl State {
         State {
             next_id: 0,
             people: HashMap::new(),
+            names: HashMap::new(),
             peers: HashMap::new(),
             queues: HashMap::new(),
+            password_config: argon2::Config::default(),
         }
     }
 
@@ -43,16 +60,37 @@ impl State {
         id
     }
 
-    pub fn new_person(&mut self, name: &str) -> PersonId {
+    pub fn new_person(&mut self, name: &str, password: &str) -> Person {
         let id = self.fresh_id();
         info!(id = id, name = name, "registered");
 
+        // TODO this is a race :(
+        // if someone registers a name while someone else is mid-registration, we'll fail this check :(
+        // best solution: return a result here and handle the race up above
+        assert!(!self.names.contains_key(name));
         let name = name.to_string();
+        self.names.insert(name.clone(), id);
 
-        let person = Person { id, name };
-        self.people.insert(id, person);
+        let mut salt: [u8; PASSWD_SALT_LENGTH] = [0; PASSWD_SALT_LENGTH];
+        rand::thread_rng().fill_bytes(&mut salt);
+        let salt = base64::encode(salt);
 
-        id
+        // TODO handle error case
+        let password =
+            argon2::hash_encoded(password.as_bytes(), salt.as_bytes(), &self.password_config)
+                .unwrap();
+
+        let person = Person {
+            id,
+            loc: INITIAL_LOC,
+            name,
+            salt,
+            password,
+        };
+
+        self.people.insert(id, person.clone());
+
+        person
     }
 
     pub fn person(&self, id: &PersonId) -> &Person {
@@ -60,16 +98,42 @@ impl State {
         self.people.get(&id).unwrap()
     }
 
+    pub fn person_by_name(&self, name: &str) -> Option<Person> {
+        let id = self.names.get(name)?;
+        self.people.get(id).map(|p| p.clone()).or_else(|| {
+            error!(name, id, "in names but not people");
+            None
+        })
+    }
+
     pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
-        self.peers.insert(Connection::TCP { addr }, id);
+        match self.peers.get_mut(&id) {
+            Some(conns) => { 
+                let _ = conns.insert(Connection::TCP { addr });
+            },
+            None => { 
+                let mut conns = HashSet::new();
+                conns.insert(Connection::TCP { addr });
+                self.peers.insert(id, conns);
+            },
+        };
         self.queues.insert(id, tx);
     }
 
-    pub fn unregister_tcp_connection(&mut self, addr: SocketAddr) {
-        let addr = Connection::TCP { addr };
-        assert!(self.peers.contains_key(&addr));
+    pub fn unregister_tcp_connection(&mut self, id: PersonId, addr: SocketAddr) {
+        assert!(self.peers.contains_key(&id));
 
-        self.peers.remove(&addr);
+        let addr = Connection::TCP { addr };
+
+        let conns = self.peers.get_mut(&id).unwrap();
+        assert!(conns.contains(&addr));
+
+        conns.remove(&addr);
+
+        if conns.is_empty() {
+            info!(id=id, "last connection, dropping queues");
+            self.queues.remove(&id);
+        }
     }
 
     /// Send a message to _all_ peers.
@@ -106,7 +170,7 @@ impl State {
 
 /// Someone who is connected to the server, either directly over TCP (e.g., telnet or a MUD client)
 /// or statelessly via an HTTP session (possibly in multiple rooms!).
-/// 
+///
 /// Each such connection will have its own message queue.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Connection {

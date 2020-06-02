@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use rand::RngCore;
-use tokio::time::DelayQueue;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
@@ -11,9 +10,10 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tokio::time::DelayQueue;
 
-use hyper::service::{make_service_fn, service_fn};
 use hyper::server::conn::AddrStream;
+use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 use futures::SinkExt;
@@ -71,23 +71,22 @@ impl TCPPeer {
     async fn new(
         state: GameState,
         lines: Framed<TcpStream, LinesCodec>,
-        loc: RoomId,
-        name: String,
+        person: &Person,
     ) -> io::Result<Self> {
         let addr = lines.get_ref().peer_addr()?;
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // TODO login?! use existing id?
-        let id = state.lock().await.new_person(&name);
-
-        state.lock().await.register_tcp_connection(id, addr, tx);
+        state
+            .lock()
+            .await
+            .register_tcp_connection(person.id, addr, tx);
 
         Ok(TCPPeer {
             lines,
-            id,
-            name,
-            loc,
+            id: person.id,
+            name: person.name.clone(),
+            loc: person.loc,
             rx,
         })
     }
@@ -116,6 +115,7 @@ impl Stream for TCPPeer {
 #[derive(Debug)]
 struct LoginAbortedError {
     addr: SocketAddr,
+    name: Option<String>,
 }
 
 impl Error for LoginAbortedError {
@@ -126,45 +126,184 @@ impl Error for LoginAbortedError {
 
 impl fmt::Display for LoginAbortedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            None => write!(f, "Login error: connection with {} reset.", self.addr),
+            Some(name) => write!(
+                f,
+                "Login error: connection with {} from {} reset.",
+                name, self.addr
+            ),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TooManyPasswordAttemptsError {
+    addr: SocketAddr,
+    name: String,
+}
+
+impl Error for TooManyPasswordAttemptsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for TooManyPasswordAttemptsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Couldn't get username from {}; connection reset.",
-            self.addr
+            "Login error: too many password attempts as {} from {}; connection reset.",
+            self.name, self.addr
         )
     }
 }
 
-pub async fn login(
-    _state: GameState,
-    lines: &mut Framed<TcpStream, LinesCodec>,
+#[derive(Debug)]
+struct PasswordsDontMatchError {
     addr: SocketAddr,
-) -> Result<(String, RoomId), Box<dyn Error>> {
-    // TODO welcome header, instructions, etc.
+    name: String,
+}
 
+impl Error for PasswordsDontMatchError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for PasswordsDontMatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Registration error: passwords don't match for {} on {}.",
+            self.name, self.addr
+        )
+    }
+}
+
+pub async fn prompt<F, Ferr, Ftimeout>(
+    lines: &mut Framed<TcpStream, LinesCodec>,
+    prompt: &str,
+    reprompt: &str,
+    valid: F,
+    check_tries: Ferr,
+    timeout: Ftimeout,
+) -> Result<String, Box<dyn Error>>
+where
+    F: Fn(&str) -> bool,
+    Ferr: Fn(usize) -> Option<Box<dyn Error>>,
+    Ftimeout: FnOnce() -> Box<dyn Error>,
+{
+    let mut num_tries = 0;
     loop {
-        lines
-            .send("What is your email address or Twitter handle? ")
-            .await?;
+        lines.send(prompt).await?;
 
         match lines.next().await {
             Some(Ok(line)) => {
-                let name = line.trim();
+                let line = line.trim();
 
-                if name.is_empty() || !name.contains('@') {
-                    lines
-                        .send("Please enter a valid email address or Twitter handle.")
-                        .await?;
-                    continue;
+                if valid(&line) {
+                    return Ok(line.to_string());
                 }
 
-                // TODO look up location
-                let loc = DUMMY_ROOM_ID;
+                num_tries += 1;
+                if let Some(error) = check_tries(num_tries) {
+                    return Err(error);
+                }
 
-                return Ok((name.to_string(), loc));
+                lines.send(reprompt).await?;
             }
-            _ => return Err(Box::new(LoginAbortedError { addr })),
+            _ => return Err(timeout()),
         }
     }
+}
+
+pub async fn login(
+    state: GameState,
+    lines: &mut Framed<TcpStream, LinesCodec>,
+    addr: SocketAddr,
+) -> Result<Person, Box<dyn Error>> {
+    // TODO welcome header, instructions, etc.
+
+    let name = prompt(
+        lines,
+        "What is your email address or Twitter handle? ",
+        "Please enter a valid email address or Twitter handle.",
+        |name| !name.is_empty() && name.contains('@'),
+        |_| None, // unlimited tries
+        || Box::new(LoginAbortedError { addr, name: None }),
+    )
+    .await?;
+
+    let p = state.lock().await.person_by_name(&name);
+
+    match p {
+        Some(person) => {
+            let _password = prompt(
+                lines,
+                "Password: ",
+                "Password incorrect.",
+                |password| {
+                    argon2::verify_encoded(&person.password, password.as_bytes()).unwrap_or(false)
+                },
+                |failed_tries| {
+                    if failed_tries >= 3 {
+                        Some(Box::new(TooManyPasswordAttemptsError {
+                            name: name.clone(),
+                            addr,
+                        }))
+                    } else {
+                        None
+                    }
+                },
+                || {
+                    Box::new(LoginAbortedError {
+                        addr,
+                        name: Some(name.clone()),
+                    })
+                },
+            )
+            .await?;
+
+            return Ok(person.clone());
+        }
+        None => loop {
+            let password1 = prompt(
+                lines,
+                "Please enter a password: ",
+                "That is not a valid password. It should be at least 8 characters.",
+                |password| password.len() >= 8,
+                |_| None,
+                || {
+                    Box::new(LoginAbortedError {
+                        addr,
+                        name: Some(name.clone()),
+                    })
+                },
+            )
+            .await?;
+
+            lines.send("Please re-enter your password: ").await?;
+
+            match lines.next().await {
+                Some(Ok(password2)) => {
+                    if password1 != password2.trim() {
+                        lines.send("Passwords don't match.").await?;
+                        continue;
+                    }
+
+                    let person = state.lock().await.new_person(&name, &password1);
+                    return Ok(person);
+                }
+                _ => {
+                    return Err(Box::new(LoginAbortedError {
+                        addr,
+                        name: Some(name),
+                    }))
+                }
+            }
+        },
+    };
 }
 
 pub async fn process(
@@ -174,8 +313,8 @@ pub async fn process(
 ) -> Result<(), Box<dyn Error>> {
     let mut lines = Framed::new(stream, LinesCodec::new());
 
-    let (name, loc) = login(state.clone(), &mut lines, addr).await?;
-    let mut peer = TCPPeer::new(state.clone(), lines, loc, name.clone()).await?;
+    let person = login(state.clone(), &mut lines, addr).await?;
+    let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
 
     let span = span!(Level::INFO, "session");
     let _guard = span.enter();
@@ -188,7 +327,7 @@ pub async fn process(
             name: peer.name.clone(),
             loc: peer.loc,
         };
-        state.roomcast(loc, msg).await;
+        state.roomcast(peer.loc, msg).await;
     }
 
     while let Some(result) = peer.next().await {
@@ -217,7 +356,7 @@ pub async fn process(
         let mut state = state.lock().await;
 
         // actually log them off
-        state.unregister_tcp_connection(addr);
+        state.unregister_tcp_connection(peer.id, addr);
 
         // announce it to everyone
         let msg = Message::Depart {
@@ -226,7 +365,7 @@ pub async fn process(
             loc: peer.loc,
         };
         info!(id = peer.id, "logout");
-        state.roomcast(loc, msg).await;
+        state.roomcast(peer.loc, msg).await;
     }
 
     trace!("disconnected");
@@ -257,10 +396,10 @@ pub async fn tcp_serve<A: ToSocketAddrs>(state: Arc<Mutex<State>>, addr: A) -> i
 ////////////////////////////////////////////////////////////////////////////////
 
 /// The cookie in which we store sessions
-const SESSIONID : &'static str = "id";
+const SESSIONID: &'static str = "id";
 
 /// The name of the CSRF token variable for POST requests
-const CSRFTOKEN : &'static str = "tok";
+const CSRFTOKEN: &'static str = "tok";
 
 /// Time-to-live in a room between calls to `/api/be`
 const HTTP_TTL_SECS: u64 = 30;
@@ -335,7 +474,11 @@ pub async fn http_serve<A: std::net::ToSocketAddrs + std::fmt::Display>(
         let state = state.clone();
         let remote_addr = conn.remote_addr();
 
-        async move { Ok::<_, Infallible>(service_fn(move |req| http_route(state.clone(), remote_addr, req))) }
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req| {
+                http_route(state.clone(), remote_addr, req)
+            }))
+        }
     });
 
     let server = Server::bind(&addr).serve(make_svc);
@@ -385,14 +528,18 @@ async fn http_route(
         _ => {
             *resp.status_mut() = StatusCode::NOT_FOUND;
             *resp.body_mut() = Body::from("404 Not Found");
-        },
+        }
     };
 
     info!(status = ?resp.status());
     Ok(resp)
 }
 
-async fn http_unimplemented(_state: Arc<Mutex<State>>, _req: Request<Body>, resp: &mut Response<Body>) {
+async fn http_unimplemented(
+    _state: Arc<Mutex<State>>,
+    _req: Request<Body>,
+    resp: &mut Response<Body>,
+) {
     *resp.status_mut() = StatusCode::NOT_IMPLEMENTED;
     *resp.body_mut() = Body::from("501 Not Implemented");
 }
