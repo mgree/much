@@ -227,10 +227,12 @@ pub async fn login(
     .await?;
 
     let conn = Connection::TCP { addr };
-    let p = state.lock().await.person_by_name(&name);
+    let person = state.lock().await.person_by_name(&name);
 
-    match p {
+    match person {
         Some(person) => {
+            info!(person.id, "found {}", person.name);
+
             let _password = prompt(
                 lines,
                 "Password: ",
@@ -260,6 +262,8 @@ pub async fn login(
             return Ok(Person::new(&person, conn));
         }
         None => loop {
+            info!("no user {}, registering", name);
+
             let password1 = prompt(
                 lines,
                 "Please enter a password: ",
@@ -285,6 +289,7 @@ pub async fn login(
                     }
 
                     let person = state.lock().await.new_person(&name, &password1);
+                    info!(person.id, "registered");
                     return Ok(Person::new(&person, conn));
                 }
                 _ => {
@@ -298,6 +303,7 @@ pub async fn login(
     };
 }
 
+
 pub async fn process(
     state: GameState,
     stream: TcpStream,
@@ -305,12 +311,14 @@ pub async fn process(
 ) -> Result<(), Box<dyn Error>> {
     let mut lines = Framed::new(stream, LinesCodec::new());
 
-    let mut person = login(state.clone(), &mut lines, addr).await?;
-    let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
+    let login_span = span!(Level::INFO, "login/registration", ?addr);
+    let mut person = login_span.in_scope(|| login(state.clone(), &mut lines, addr)).await?;
 
-    let span = span!(Level::INFO, "session");
+    let span = span!(Level::INFO, "session", id = person.id);
     let _guard = span.enter();
-    info!(person.id, "login");
+    info!("logged in");
+    
+    let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
 
     let loc = person.loc;
     state.lock().await.arrive(&mut person, loc).await;
@@ -344,7 +352,6 @@ pub async fn process(
         state.depart(&person).await;
     }
     info!(id = person.id, "logout");
-
 
     trace!("disconnected");
     Ok(())
