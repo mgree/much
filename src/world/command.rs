@@ -8,7 +8,6 @@ use tracing::{info, span, Level};
 
 use crate::world::message::*;
 use crate::world::person::*;
-use crate::world::room::*;
 use crate::world::state::*;
 
 #[derive(Clone, Debug)]
@@ -54,8 +53,8 @@ impl Command {
         }
     }
 
-    pub async fn run(self, state: Arc<Mutex<State>>, loc: RoomId, id: PersonId, name: &str) {
-        let span = span!(Level::INFO, "command", id = id);
+    pub async fn run(self, state: Arc<Mutex<State>>, p: &mut Person) {
+        let span = span!(Level::INFO, "command", id = p.id);
         let _guard = span.enter();
         info!(command = self.tag());
 
@@ -65,11 +64,11 @@ impl Command {
                     .lock()
                     .await
                     .roomcast(
-                        loc,
+                        p.loc,
                         Message::Say {
-                            speaker: id,
-                            speaker_name: name.to_string(),
-                            loc,
+                            speaker: p.id,
+                            speaker_name: p.name.clone(),
+                            loc: p.loc,
                             text,
                         },
                     )

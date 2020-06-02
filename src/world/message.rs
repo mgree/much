@@ -38,9 +38,4 @@ impl Message {
             } => format!("{} says, '{}'", speaker_name, text),
         }
     }
-
-    pub fn new_location(&self, _receiver: PersonId) -> Option<RoomId> {
-        // TODO return a location on movement when receiver is the given id
-        None
-    }
 }

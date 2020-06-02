@@ -99,6 +99,14 @@ impl State {
         person
     }
 
+    pub fn room(&self, loc: RoomId) -> &HashSet<Person> {
+        self.rooms.get(&loc).expect("room should exist")
+    }
+
+    pub fn room_mut(&mut self, loc: RoomId) -> &mut HashSet<Person> {
+        self.rooms.get_mut(&loc).expect("room should exist")
+    }
+
     pub fn person(&self, id: &PersonId) -> &PersonRecord {
         assert!(self.people.contains_key(&id));
         self.people.get(&id).unwrap()
@@ -177,31 +185,37 @@ impl State {
         }
     }
 
-    pub async fn depart(&mut self, peer: &Person, loc: RoomId) {
-        info!(?peer, "depart");
+    pub async fn depart(&mut self, p: &Person) {
+        info!(?p, "depart");
 
-        let room = self.rooms.get_mut(&loc).unwrap();
+        let room = self.rooms.get_mut(&p.loc).unwrap();
 
-        room.remove(peer);
+        room.remove(p);
 
         let msg = Message::Depart {
-            id: peer.id,
-            name: peer.name.clone(),
-            loc: loc,
+            id: p.id,
+            name: p.name.clone(),
+            loc: p.loc,
         };
-        self.roomcast(loc, msg).await;
+        self.roomcast(p.loc, msg).await;
     }
 
-    pub async fn arrive(&mut self, peer: &Person, loc: RoomId) {
-        info!(?peer, "arrive");
+    pub async fn arrive(&mut self, p: &mut Person, loc: RoomId) {
+        info!(?p, "arrive");
 
-        let room = self.rooms.get_mut(&loc).unwrap();
+        if p.loc != loc {
+            let old_room = self.room_mut(p.loc);
+            old_room.remove(p);
 
-        room.insert(peer.clone());
+            p.loc = loc;
+            let new_room = self.room_mut(loc);
+
+            new_room.insert(p.clone());    
+        }
 
         let msg = Message::Arrive {
-            id: peer.id,
-            name: peer.name.clone(),
+            id: p.id,
+            name: p.name.clone(),
             loc: loc,
         };
         self.roomcast(loc, msg).await;

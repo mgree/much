@@ -57,12 +57,6 @@ struct TCPPeer {
     /// This is the actual place we read from!
     // TODO support IAC codes, MCCP, etc.
     lines: Framed<TcpStream, LinesCodec>,
-    /// Who this peer resolves to
-    id: PersonId,
-    /// Their name (cached, for convenience)
-    name: String,
-    /// Their locaation (cached, for convenience)
-    loc: RoomId,
     /// Receive-end of the message queue for this connection
     rx: MessageQueueRX,
 }
@@ -84,9 +78,6 @@ impl TCPPeer {
 
         Ok(TCPPeer {
             lines,
-            id: person.id,
-            name: person.name.clone(),
-            loc: person.loc,
             rx,
         })
     }
@@ -314,33 +305,31 @@ pub async fn process(
 ) -> Result<(), Box<dyn Error>> {
     let mut lines = Framed::new(stream, LinesCodec::new());
 
-    let person = login(state.clone(), &mut lines, addr).await?;
+    let mut person = login(state.clone(), &mut lines, addr).await?;
     let mut peer = TCPPeer::new(state.clone(), lines, &person).await?;
 
     let span = span!(Level::INFO, "session");
     let _guard = span.enter();
-    info!(peer.id, "login");
+    info!(person.id, "login");
 
-    state.lock().await.arrive(&person, peer.loc).await;
+    let loc = person.loc;
+    state.lock().await.arrive(&mut person, loc).await;
 
     while let Some(result) = peer.next().await {
         match result {
             Ok(PeerMessage::LineFromPeer(msg)) => {
                 let cmd = Command::parse(msg)?;
 
-                cmd.run(state.clone(), peer.loc, peer.id, &peer.name).await;
+                cmd.run(state.clone(), &mut person).await;
             }
 
             Ok(PeerMessage::SendToPeer(msg)) => {
-                if let Some(loc) = msg.new_location(peer.id) {
-                    peer.loc = loc;
-                }
-                let s = msg.render(peer.id).await;
+                let s = msg.render(person.id).await;
                 peer.lines.send(s).await?;
             }
 
             Err(e) => {
-                error!(?e, id = peer.id);
+                error!(?e, id = person.id);
             }
         }
     }
@@ -349,12 +338,12 @@ pub async fn process(
         let mut state = state.lock().await;
 
         // actually log them off
-        state.unregister_tcp_connection(peer.id, addr);
+        state.unregister_tcp_connection(person.id, addr);
 
         // announce it to everyone
-        state.depart(&person, peer.loc).await;
+        state.depart(&person).await;
     }
-    info!(id = peer.id, "logout");
+    info!(id = person.id, "logout");
 
 
     trace!("disconnected");
