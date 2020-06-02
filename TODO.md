@@ -1,3 +1,9 @@
+- [ ] Refactor
+      Person -> PersonRecord
+      Peer -> Person
+      
+      don't expose PersonRecords in general, have state login/register logic return Person
+
 - [ ] Performance questions
   Switch from Mutex to RwLock? Don't want to block out the writers...
   Use parking_lot's RwLock (but maybe let's not switch to nightly)
