@@ -16,7 +16,7 @@ pub struct Person {
     /// Last known location/default location
     pub loc: RoomId,
 
-    /// The salt for the password (of length `PASSWD_SALT_LENGTH`)
+    /// The salt for the password (Base64 encoded string of length `PASSWD_SALT_LENGTH`)
     pub salt: String,
     /// The hashed password
     pub password: String,

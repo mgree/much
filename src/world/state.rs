@@ -77,7 +77,7 @@ impl State {
         let name = name.to_string();
         self.names.insert(name.clone(), id);
 
-        let mut salt: [u8; PASSWD_SALT_LENGTH] = [0; PASSWD_SALT_LENGTH];
+        let mut salt: [u8; PASSWD_SALT_LENGTH / 4] = [0; PASSWD_SALT_LENGTH / 4];
         rand::thread_rng().fill_bytes(&mut salt);
         let salt = base64::encode(salt);
 
