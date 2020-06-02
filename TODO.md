@@ -11,7 +11,7 @@
   + [ ] pronouns
 
 - [ ] Options
-  + [ ] passwords!
+  + [x] passwords!
   + [ ] arrive/depart announcements
   + [ ] admin bit
   + [ ] permissions
