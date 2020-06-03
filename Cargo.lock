@@ -485,6 +485,7 @@ dependencies = [
  "base64",
  "clap",
  "futures",
+ "futures-util",
  "hyper",
  "rand",
  "rust-argon2",

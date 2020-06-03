@@ -107,5 +107,11 @@ The `who` command will do that in any case. Do we even want a `where` command?
 
 - [ ] Testing!!!
   + [ ] Functionality
-        Mocking?
+    * [ ] check that messages are good
+    * [ ] unsuccessful login
+    * [ ] multiple simultaneous logins
+    * [ ] conversation/receipt
+    * [ ] arrive/depart messages
+    * [ ] login/logout
+    * [ ] duplicate logins (need to handle this!)
   + [ ] Under load

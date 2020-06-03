@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::time::DelayQueue;
+use std::time::Duration;
 
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -20,11 +20,12 @@ use futures::SinkExt;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::DelayQueue;
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
 use tracing::{error, info, span, trace, Level};
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+use clap::{App, Arg};
 
 mod world;
 
@@ -33,6 +34,135 @@ use world::message::*;
 use world::person::*;
 use world::room::*;
 use world::state::*;
+
+////////////////////////////////////////////////////////////////////////////////
+// DRIVER AND CONFIGURATION
+////////////////////////////////////////////////////////////////////////////////
+
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const NAME: &'static str = env!("CARGO_PKG_NAME");
+const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
+
+pub struct Config {
+    pub timeout: Option<u64>,
+    pub addr: String,
+    pub tcp_port: String,
+    pub http_port: String,
+    pub verbosity: Level,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            timeout: None,
+            addr: "0.0.0.0".to_string(),
+            tcp_port: "4000".to_string(),
+            http_port: "4080".to_string(),
+            verbosity: Level::INFO,
+        }
+    }
+}
+
+impl Config {
+    pub fn from_args() -> Self {
+        let config = App::new(NAME)
+            .version(VERSION)
+            .author(AUTHORS)
+            .about("Multi-user conference hall")
+            .arg(
+                Arg::with_name("timeout")
+                    .short("t")
+                    .long("timeout")
+                    .takes_value(true)
+                    .value_name("SECONDS")
+                    .default_value("forever")
+                    .help("Time after which the server will shutdown"),
+            )
+            .arg(
+                Arg::with_name("addr")
+                    .short("b")
+                    .long("bind")
+                    .takes_value(true)
+                    .value_name("ADDRESS")
+                    .default_value("0.0.0.0")
+                    .help("Sets the interface to listen on"),
+            )
+            .arg(
+                Arg::with_name("TCP port")
+                    .long("tcp-port")
+                    .takes_value(true)
+                    .value_name("PORT")
+                    .default_value("4000")
+                    .help("Sets the port to listen for direct TCP connections on"),
+            )
+            .arg(
+                Arg::with_name("HTTP port")
+                    .long("http-port")
+                    .takes_value(true)
+                    .value_name("PORT")
+                    .default_value("4080")
+                    .help("Sets the port to listen for HTTP connections on"),
+            )
+            .arg(
+                Arg::with_name("v")
+                    .short("v")
+                    .multiple(true)
+                    .help("Sets the level of verbosity"),
+            )
+            .get_matches();
+
+        let addr = config.value_of("addr").expect("interface address").to_string();
+        let tcp_port = config.value_of("TCP port").expect("TCP port").to_string();
+        let http_port = config.value_of("HTTP port").expect("HTTP port").to_string();
+        let timeout: Option<u64> = config.value_of("timeout").expect("timeout in seconds").parse().ok();
+
+        let verbosity = match config.occurrences_of("v") {
+            0 => Level::INFO,
+            1 => Level::DEBUG,
+            2 | _ => Level::TRACE,
+        };
+
+        Config {
+            timeout,
+            addr,
+            tcp_port,
+            http_port,
+            verbosity
+        }
+    }
+
+    pub fn tcp_addr(&self) -> String {
+        format!("{}:{}", self.addr, self.tcp_port)
+    }
+
+    pub fn http_addr(&self) -> String {
+        format!("{}:{}", self.addr, self.http_port)
+    }
+}
+
+pub fn run(config: &Config, state: GameState) -> Result<(), Box<dyn Error>> {
+    let tcp_server = tcp_serve(state.clone(), config.tcp_addr());
+    let http_server = http_serve(state.clone(), config.http_addr());
+
+    let runtime = tokio::runtime::Runtime::new()?;
+    info!("initialized tokio runtime");
+
+    runtime.spawn(tcp_server);
+    info!("started TCP server on {}", config.tcp_addr());
+
+    runtime.spawn(http_server);
+    info!("started HTTP server on {}", config.http_addr());
+
+    if let Some(secs) = config.timeout {
+        info!("shutdown timer: {} seconds", secs);
+        runtime.shutdown_timeout(Duration::from_secs(secs));
+    } else {
+        loop {}
+    }
+
+    info!("shutting down");
+    Ok(())
+}
 
 pub type GameState = Arc<Mutex<State>>;
 
@@ -258,11 +388,13 @@ pub async fn login(
                 },
             )
             .await?;
-
+            
             return Ok(Person::new(&person, conn));
         }
         None => loop {
             info!("no user {}, registering", name);
+
+            lines.send("You must be new here!").await?;
 
             let password1 = prompt(
                 lines,
@@ -313,6 +445,7 @@ pub async fn process(
 
     let login_span = span!(Level::INFO, "login/registration", ?addr);
     let mut person = login_span.in_scope(|| login(state.clone(), &mut lines, addr)).await?;
+    lines.send(format!("Logged in as {}...", person.name)).await?;
 
     let span = span!(Level::INFO, "session", id = person.id);
     let _guard = span.enter();
