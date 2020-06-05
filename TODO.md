@@ -45,7 +45,7 @@
     * [ ] transfer (ownership of a private room)
     * [ ] profile info/editing
     * [ ] status (afk/in a meeting/invisible)
-    * [ ] logout
+    * [x] logout
     * [x] shutdown
 
 - [x] Maps/rooms

@@ -6,7 +6,7 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{SocketAddr,Shutdown};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -16,7 +16,7 @@ use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
-use futures::SinkExt;
+use futures::{SinkExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
@@ -467,6 +467,14 @@ pub async fn process(
             Ok(PeerMessage::SendToPeer(msg)) => {
                 let s = msg.render(person.id).await;
                 peer.lines.send(s).await?;
+
+                if let Message::Logout = msg {
+                    info!(id = person.id, "logout");
+                    if let Err(e) = peer.lines.get_ref().shutdown(Shutdown::Both) {
+                        error!(?e, id = person.id, "logout");
+                    }
+                    return Ok(())
+                }
             }
 
             Err(e) => {
@@ -484,7 +492,7 @@ pub async fn process(
         // announce it to everyone
         state.depart(&person).await;
     }
-    info!(id = person.id, "logout");
+    info!(id = person.id, "logout (disconnected)");
 
     trace!("disconnected");
     Ok(())

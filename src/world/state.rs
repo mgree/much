@@ -126,15 +126,38 @@ impl State {
     }
 
     pub fn unregister_connection(&mut self, id: PersonId) {
-        assert!(self.peers.contains_key(&id));
-        assert!(self.queues.contains_key(&id));
-
         if let None = self.peers.remove(&id) {
             warn!(id, "no connection to unregister");
         }
         if let None = self.queues.remove(&id) {
             warn!(id, "no queue to unregister");
         }
+    }
+
+    pub async fn logout(&mut self, p: &Person) {
+        self.depart(p).await;
+
+        let conn = match self.peers.remove(&p.id) {
+            None => {
+                warn!(p.id, "no connection to terminate on logout");
+                return ();
+            },
+            Some(conn) => conn,
+        };
+
+        let q = match self.queues.remove(&p.id) {
+            None => {
+                warn!(p.id, "no connection to terminate on logout");
+                return ();
+            },
+            Some(q) => q,
+        };
+
+        if let Connection::TCP { .. } = conn {
+            let _ = q.send(Message::Logout);
+        }
+
+        // TODO force end of HTTP session?
     }
 
     /// Send a message to _all_ peers.
@@ -178,6 +201,10 @@ impl State {
     }
 
     pub async fn depart(&mut self, p: &Person) {
+        // TODO extra parameter indicating where we're going:
+        //  - other room (visible)
+        //  - logoff (visible)
+        //  - private room (invisible)
         info!(?p, "depart");
 
         let people = match self.rooms.get_mut(&p.loc) {

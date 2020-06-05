@@ -12,6 +12,7 @@ use crate::world::state::*;
 
 #[derive(Clone, Debug)]
 pub enum Command {
+    Logout,
     Say { text: String },
     Shutdown,
 }
@@ -39,6 +40,8 @@ impl Command {
 
         if s == "shutdown" {
             Ok(Command::Shutdown)
+        } else if s == "logout" {
+            Ok(Command::Logout)
         } else {
             Ok(Command::Say {
                 text: s.to_string(),
@@ -48,6 +51,7 @@ impl Command {
 
     pub fn tag(&self) -> &'static str {
         match self {
+            Command::Logout => "logout",
             Command::Say { .. } => "say",
             Command::Shutdown => "shutdown",
         }
@@ -59,6 +63,7 @@ impl Command {
         info!(command = self.tag());
 
         match self {
+            Command::Logout => state.lock().await.logout(p).await,
             Command::Say { text } => {
                 state
                     .lock()
