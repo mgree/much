@@ -204,7 +204,7 @@ impl TCPPeer {
         state
             .lock()
             .await
-            .register_tcp_connection(person.id, addr, tx);
+            .register_connection(person.id, Connection::TCP { addr }, tx);
 
         Ok(TCPPeer {
             lines,
@@ -479,7 +479,7 @@ pub async fn process(
         let mut state = state.lock().await;
 
         // actually log them off
-        state.unregister_tcp_connection(person.id, addr);
+        state.unregister_connection(person.id);
 
         // announce it to everyone
         state.depart(&person).await;

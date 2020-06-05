@@ -15,13 +15,13 @@ use crate::world::room::*;
 /// The global shared state
 pub struct State {
     /// CONFIGURATION
-    /// 
+    ///
     /// Password hashing configuration
     password_config: argon2::Config<'static>,
 
     /// DATABASE
-    /// 
-    /// Next person ID to generate
+    ///
+    /// Next `PersonId` to generate
     next_id: PersonId,
     /// Each PersonId is associated with Person data
     people: HashMap<PersonId, PersonRecord>,
@@ -32,10 +32,10 @@ pub struct State {
 
     /// CONNECTION INFO
     ///
-    /// Each `PersonId` has some number of connections
-    peers: HashMap<PersonId, HashSet<Connection>>,
-    /// Each Connection has a corresponding message queue
-    queues: HashMap<Connection, MessageQueueTX>,
+    /// Each `PersonId` has exactly one connection
+    peers: HashMap<PersonId, Connection>, // TODO do we actually need to track this?
+    /// Each `PersonId` has a corresponding message queue
+    queues: HashMap<PersonId, MessageQueueTX>,
 }
 
 impl State {
@@ -120,36 +120,20 @@ impl State {
         })
     }
 
-    pub fn register_tcp_connection(&mut self, id: PersonId, addr: SocketAddr, tx: MessageQueueTX) {
-        let conn = Connection::TCP { addr };
-
-        match self.peers.get_mut(&id) {
-            Some(conns) => { 
-                let _ = conns.insert(conn.clone());
-            },
-            None => { 
-                let mut conns = HashSet::new();
-                conns.insert(conn.clone());
-                self.peers.insert(id, conns);
-            },
-        };
-        self.queues.insert(conn, tx);
+    pub fn register_connection(&mut self, id: PersonId, conn: Connection, tx: MessageQueueTX) {
+        self.peers.insert(id, conn);
+        self.queues.insert(id, tx);
     }
 
-    pub fn unregister_tcp_connection(&mut self, id: PersonId, addr: SocketAddr) {
-        let conn = Connection::TCP { addr };
-
+    pub fn unregister_connection(&mut self, id: PersonId) {
         assert!(self.peers.contains_key(&id));
-        assert!(self.queues.contains_key(&conn));
+        assert!(self.queues.contains_key(&id));
 
-        let conns = self.peers.get_mut(&id).unwrap();
-        assert!(conns.contains(&conn));
-
-        conns.remove(&conn);
-
-        if conns.is_empty() {
-            info!(id=id, "last connection, dropping queues");
-            self.queues.remove(&conn);
+        if let None = self.peers.remove(&id) {
+            warn!(id, "no connection to unregister");
+        }
+        if let None = self.queues.remove(&id) {
+            warn!(id, "no queue to unregister");
         }
     }
 
@@ -166,19 +150,27 @@ impl State {
     pub async fn roomcast(&mut self, loc: RoomId, message: Message) {
         trace!(loc, message = ?message, "roomcast");
 
-        // TODO look up only those person ids in loc
-        let room_conns = self.peers.values().flatten();
+        // find out who's there
+        let people = match self.rooms.get(&loc) {
+            None => {
+                error!(loc, ?message, "room not found in rooms table");
+                return ();
+            },
+            Some(people) => people,
+        };
 
-        for conn in room_conns {
-            let p = self.queues.get(&conn);
+        // let 'em hear about it
+        for p in people {
+            let q = self.queues.get(&p.id);
 
-            match p {
+            match q {
                 None => warn!(
                     loc,
-                    ?conn, "listed in room, but no message queue... disconnected?"
+                    ?p,
+                    "listed in room, but no message queue... disconnected?"
                 ),
-                Some(p) => match p.send(message.clone()) {
-                    Err(e) => warn!(loc, ?conn, ?e, "bad message queue"),
+                Some(q) => match q.send(message.clone()) {
+                    Err(e) => warn!(loc, ?p, ?e, "bad message queue"),
                     Ok(()) => (),
                 },
             }
@@ -188,15 +180,22 @@ impl State {
     pub async fn depart(&mut self, p: &Person) {
         info!(?p, "depart");
 
-        let room = self.rooms.get_mut(&p.loc).unwrap();
+        let people = match self.rooms.get_mut(&p.loc) {
+            None => {
+                error!(?p, "not listed in departing room");
+                return ();
+            },
+            Some(people) => people,
+        };
 
-        room.remove(p);
+        people.remove(p);
 
         let msg = Message::Depart {
             id: p.id,
             name: p.name.clone(),
             loc: p.loc,
         };
+
         self.roomcast(p.loc, msg).await;
     }
 
@@ -208,10 +207,10 @@ impl State {
             old_room.remove(p);
 
             p.loc = loc;
-            let new_room = self.room_mut(loc);
-
-            new_room.insert(p.clone());    
         }
+
+        let new_room = self.room_mut(loc);
+        new_room.insert(p.clone());
 
         let msg = Message::Arrive {
             id: p.id,
@@ -223,15 +222,15 @@ impl State {
 }
 
 /// A connection to the server, either directly over TCP (e.g., telnet or a MUD client)
-/// or statelessly via an HTTP session (possibly in multiple rooms!).
+/// or statelessly via an HTTP session.
 ///
 /// Each such connection will have its own message queue.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Connection {
     /// TCP sessions merely need to track the peer
     TCP { addr: SocketAddr },
-    /// Each HTTP session (keyed by the `String` in the cookie) can be in more than one room at a time---and each one needs its own queue
-    HTTP { session: String, loc: RoomId },
+    /// HTTP sessions track the session ID
+    HTTP { session: String },
 }
 
 pub type MessageQueueTX = mpsc::UnboundedSender<Message>;

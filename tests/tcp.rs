@@ -64,3 +64,4 @@ async fn successful_login_and_shutdown() {
         None => return (),
     }
 }
+

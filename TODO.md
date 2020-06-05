@@ -1,14 +1,10 @@
-- [ ] Give up on multi-presence
-      HTTP connections should just be able to be in one place at a time
-      loading a new location URL is equivalent to running `go URL`
-      prompt on multi-connect to disconnect other connection
-      simplify state!
-
 - [ ] Performance questions
   Switch from Mutex to RwLock? Don't want to block out the writers...
   Use parking_lot's RwLock (but maybe let's not switch to nightly)
 
 - [ ] Persistence
+  + [ ] mark dirty player ids that need updating
+  + [ ] separate thread writing files to disk
 
 - [ ] Registration
   + [x] take email or twitter handle
@@ -49,6 +45,7 @@
     * [ ] transfer (ownership of a private room)
     * [ ] profile info/editing
     * [ ] status (afk/in a meeting/invisible)
+    * [ ] logout
     * [x] shutdown
 
 - [x] Maps/rooms
